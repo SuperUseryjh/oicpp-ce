@@ -46,12 +46,32 @@ function platformKey() {
     return 'linux';
 }
 
-async function findAssetUrl(patterns) {
+/// 各平台可能的资源文件名（上游命名有过变动，按可能性排序）
+const CANDIDATE_NAMES = {
+    win32: (version) => [`clangd-windows-${version}.zip`, `clangd-win-${version}.zip`],
+    darwin: (version) => [`clangd-mac-${version}.zip`, `clangd-macos-${version}.zip`],
+    linux: (version) => [`clangd-linux-${version}.zip`]
+};
+
+function directUrls(platform) {
+    return CANDIDATE_NAMES[platform](VERSION).map(
+        (name) => `https://github.com/${REPO}/releases/download/${TAG}/${name}`
+    );
+}
+
+/// 回退方案：用 release API 查资源名。
+/// 注意 api.github.com 匿名限额只有 60 次/小时，共享 runner IP 很容易 403，
+/// 所以只在直连全部失败时才走这里（有 GITHUB_TOKEN 时限额更高）。
+async function findAssetUrlViaApi(patterns) {
+    const headers = {
+        'User-Agent': 'oicpp-clangd-downloader',
+        Accept: 'application/vnd.github+json'
+    };
+    if (process.env.GITHUB_TOKEN) {
+        headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
     const response = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${TAG}`, {
-        headers: {
-            'User-Agent': 'oicpp-clangd-downloader',
-            Accept: 'application/vnd.github+json'
-        }
+        headers
     });
     if (!response.ok) {
         throw new Error(`GitHub API ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -107,12 +127,35 @@ const platform = platformKey();
 const patterns = PATTERNS[platform] || PATTERNS.linux;
 console.log(`[clangd] 目标平台 ${platform}，版本 ${TAG}（${REPO}）`);
 
-const url = await findAssetUrl(patterns);
-console.log(`[clangd] 下载 ${url}`);
-const response = await fetch(url, { headers: { 'User-Agent': 'oicpp-clangd-downloader' } });
-if (!response.ok) {
-    throw new Error(`下载失败 ${response.status} ${response.statusText}`);
+// 优先直连 releases/download，避免 api.github.com 的匿名限额
+let response = null;
+for (const candidate of directUrls(platform)) {
+    console.log(`[clangd] 尝试 ${candidate}`);
+    const attempt = await fetch(candidate, {
+        redirect: 'follow',
+        headers: { 'User-Agent': 'oicpp-clangd-downloader' }
+    });
+    if (attempt.ok) {
+        response = attempt;
+        break;
+    }
+    console.log(`[clangd] HTTP ${attempt.status}，换下一个候选`);
 }
+
+if (!response) {
+    console.log('[clangd] 直连均失败，回退到 release API 解析资源名');
+    const url = await findAssetUrlViaApi(patterns);
+    console.log(`[clangd] 下载 ${url}`);
+    const fallback = await fetch(url, {
+        redirect: 'follow',
+        headers: { 'User-Agent': 'oicpp-clangd-downloader' }
+    });
+    if (!fallback.ok) {
+        throw new Error(`下载失败 ${fallback.status} ${fallback.statusText}`);
+    }
+    response = fallback;
+}
+
 const buffer = Buffer.from(await response.arrayBuffer());
 console.log(`[clangd] 已下载 ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
 

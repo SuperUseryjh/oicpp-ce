@@ -73,11 +73,12 @@ jobs:
         run: npm install --no-audit --no-fund
 
       # 渲染层在 clangd 缺失时会抛错并导致 Monaco 编辑器创建失败，必须随包分发。
-      # 用 continue-on-error 是因为个别平台（如 macOS arm64）上游可能没有对应产物，
-      # 此时该平台会降级为「无 LSP」，但不影响打包。
+      # Windows / Linux 上游一定有产物，失败即中断；macOS 可能没有 arm64 产物，允许降级。
       - name: Prepare clangd bundle
         run: npm run prepare:clangd
-        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: ${{ startsWith(matrix.platform, 'macos') }}
 
       - name: Generate frontend (from oicpp-origin submodule)
         run: npm run prepare:frontend
