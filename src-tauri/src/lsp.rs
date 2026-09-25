@@ -146,19 +146,33 @@ fn ensure_clangd(app: &AppHandle) -> Option<PathBuf> {
         }
     }
 
+    // 兜底：Tauri 打包资源时目录映射到哪一层难以预判（`resources/*` 这类 glob 对
+    // 目录是否递归、是否保留 `resources/` 前缀随版本而异），所以直接在整个资源目录里
+    // 递归找 clangd 可执行文件。找到后就地运行、不复制 —— 只复制 bin/ 会丢掉同级的
+    // lib/clang 资源目录，clangd 会找不到内置头文件。
+    let resource_root = paths::resource_dir(app);
+    if let Some(found) = find_clangd(&resource_root) {
+        crate::misc::log_line(
+            "info",
+            &format!("[LSP] 在资源目录中直接找到 clangd: {}", found.display()),
+        );
+        return Some(found);
+    }
+
     let from_path = find_in_path(paths::clangd_executable_name());
     if from_path.is_none() {
         // 定位失败是「编辑器空白」的最常见原因（渲染层把 LSP 启动失败当致命错误），
         // 所以把查过的位置写进日志，便于区分「没打包进来」和「打包了但路径不对」
-        let resource_root = paths::resource_dir(app);
         crate::misc::log_line(
             "warn",
             &format!(
-                "[LSP] 未找到 clangd。用户目录 {}（存在 {}）/ 打包目录 {}（存在 {}）/ PATH 中的 {}",
+                "[LSP] 未找到 clangd。用户目录 {}（存在 {}）/ 打包目录 {}（存在 {}）/ 资源目录 {}（存在 {}）/ PATH 中的 {}",
                 user_root.display(),
                 user_root.is_dir(),
                 resource_root.join("clangd").display(),
                 resource_root.join("clangd").is_dir(),
+                resource_root.display(),
+                resource_root.is_dir(),
                 paths::clangd_executable_name()
             ),
         );

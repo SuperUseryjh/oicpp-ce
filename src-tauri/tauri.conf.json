@@ -32,7 +32,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/*"],
+    "resources": {
+      "resources/ConsolePauser.exe": "ConsolePauser.exe",
+      "resources/build-info.json": "build-info.json",
+      "resources/oicpp.ico": "oicpp.ico",
+      "resources/clangd/**/*": "clangd/"
+    },
     "shortDescription": "OICPP IDE for competitive programming",
     "longDescription": "OICPP IDE 是针对信息学竞赛打造的一体化集成开发环境",
     "linux": {
