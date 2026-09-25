@@ -36,10 +36,12 @@ pub fn main_script() -> String {
 
 /// 打包时使用的 clangd 目录（若存在）
 pub fn bundled_clangd_root(app: &AppHandle) -> Option<std::path::PathBuf> {
-    let dir = paths::resource_dir(app).join("clangd");
-    if dir.exists() {
-        Some(dir)
-    } else {
-        None
+    let root = paths::resource_dir(app);
+    // Tauri 打包后 `resources/` 下的目录可能保留也可能不保留 `resources/` 前缀，两种都试
+    for candidate in [root.join("clangd"), root.join("resources").join("clangd")] {
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
     }
+    None
 }

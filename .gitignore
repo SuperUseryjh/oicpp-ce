@@ -1,6 +1,9 @@
 # 生成的前端产物（由 scripts/prepare-frontend.mjs 生成）
 /frontend/
 
+# 构建时下载的 clangd（由 scripts/download-clangd.mjs 生成）
+/src-tauri/resources/clangd/
+
 # 依赖
 node_modules/
 

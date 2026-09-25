@@ -72,6 +72,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
 
+      # 渲染层在 clangd 缺失时会抛错并导致 Monaco 编辑器创建失败，必须随包分发。
+      # 用 continue-on-error 是因为个别平台（如 macOS arm64）上游可能没有对应产物，
+      # 此时该平台会降级为「无 LSP」，但不影响打包。
+      - name: Prepare clangd bundle
+        run: npm run prepare:clangd
+        continue-on-error: true
+
       - name: Generate frontend (from oicpp-origin submodule)
         run: npm run prepare:frontend
 

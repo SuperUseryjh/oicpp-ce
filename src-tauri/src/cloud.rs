@@ -174,7 +174,14 @@ async fn cloud_api(
 
     let timestamp = paths::now_millis().to_string();
     let nonce = random_nonce();
-    let body_hash = sha256_hex(&body_text);
+    // 注意：body 为空（GET/HEAD）时，原实现用**空字符串**参与签名，而不是
+    // sha256("")。若这里算成 sha256("")，每个 GET 请求（如 /cloudSync/list）
+    // 的签名都会对不上，服务端返回 401，界面表现为「登录已过期」。
+    let body_hash = if body_text.is_empty() {
+        String::new()
+    } else {
+        sha256_hex(&body_text)
+    };
     let signing = format!("{upper}\n{signed_path}\n{timestamp}\n{nonce}\n{body_hash}");
     let signature = hmac_sha256_hex(&token, &signing);
 
@@ -477,12 +484,17 @@ async fn start_login(app: &tauri::AppHandle) -> Value {
             }
 
             let user = verified.get("user").cloned().unwrap_or(Value::Null);
+            // 与原实现一致：loggedInAt 为毫秒时间戳（渲染层会拿它做时间计算）
+            let logged_in_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis() as u64)
+                .unwrap_or(0);
             settings::set_value(
                 "account",
                 json!({
                     "user": user,
                     "loginToken": login_token,
-                    "loggedInAt": paths::iso_now()
+                    "loggedInAt": logged_in_at
                 }),
             );
             let _ = settings::save();

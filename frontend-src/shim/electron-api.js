@@ -26,6 +26,87 @@
         window.__OICPP_QUERY_STRING__ = ENV.queryString;
     }
 
+    // ---------------------------------------------------------------- 本地文件资源
+    // WebView 不允许从 http 源加载 file:// 子资源（Electron 下没有这个限制）。
+    // 用户自定义背景图恰好走 file:// 路径（渲染层把绝对路径拼成 file:///…），
+    // 因此在这里把写进 CSS 的 file:// 地址改写成 Tauri 的 asset 协议地址
+    // （tauri.conf.json 已开启 assetProtocol，scope 为 **）。
+    var ASSET_ORIGIN = ENV.assetOrigin || 'asset://localhost';
+
+    function rewriteLocalFileUrls(value) {
+        if (typeof value !== 'string' || value.indexOf('file://') === -1) {
+            return value;
+        }
+        return value.replace(/file:\/\/+/g, ASSET_ORIGIN + '/');
+    }
+
+    (function patchStyleUrls() {
+        if (typeof CSSStyleDeclaration === 'undefined') {
+            return;
+        }
+        var proto = CSSStyleDeclaration.prototype;
+
+        ['backgroundImage', 'background'].forEach(function (prop) {
+            var descriptor = Object.getOwnPropertyDescriptor(proto, prop);
+            if (!descriptor || typeof descriptor.set !== 'function') {
+                return;
+            }
+            Object.defineProperty(proto, prop, {
+                configurable: true,
+                enumerable: descriptor.enumerable,
+                get: descriptor.get,
+                set: function (value) {
+                    descriptor.set.call(this, rewriteLocalFileUrls(value));
+                }
+            });
+        });
+
+        var originalSetProperty = proto.setProperty;
+        proto.setProperty = function (name, value, priority) {
+            return originalSetProperty.call(this, name, rewriteLocalFileUrls(value), priority);
+        };
+    })();
+
+    // ---------------------------------------------------------------- 诊断
+    // 资源加载失败（404）不会冒泡到 window.onerror，而在 Tauri 下 vendor/ 资源
+    // 路径出问题正是典型症状。这里在捕获阶段监听，把失败项写进应用日志
+    // （~/.oicpp/logs），方便在没有 devtools 的正式包里定位。
+    var DIAGNOSTIC_LIMIT = 50;
+    var diagnosticCount = 0;
+
+    function reportDiagnostic(message) {
+        if (diagnosticCount >= DIAGNOSTIC_LIMIT) {
+            return;
+        }
+        diagnosticCount += 1;
+        try {
+            var t = window.__TAURI__;
+            if (!t || !t.core || typeof t.core.invoke !== 'function') {
+                return;
+            }
+            var pending = t.core.invoke('ipc_send', {
+                channel: 'logger-log',
+                args: [{ level: 'error', args: [message] }]
+            });
+            // 必须吞掉失败，否则 invoke 被拒 → unhandledrejection → 递归上报
+            if (pending && typeof pending.catch === 'function') {
+                pending.catch(function () { });
+            }
+        } catch (_) { }
+    }
+
+    window.addEventListener('error', function (event) {
+        var target = event && event.target;
+        if (target && target !== window && target.tagName) {
+            reportDiagnostic('[资源加载失败] ' + target.tagName.toLowerCase() + ' ' + (target.src || target.href || ''));
+        }
+    }, true);
+
+    window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && event.reason;
+        reportDiagnostic('[未处理的 Promise 拒绝] ' + ((reason && reason.message) ? reason.message : String(reason)));
+    });
+
     // ---------------------------------------------------------------- 基础桥接
     function tauriCore() {
         var t = window.__TAURI__;

@@ -11,9 +11,10 @@
   "type": "module",
   "scripts": {
     "prepare:frontend": "node scripts/prepare-frontend.mjs",
+    "prepare:clangd": "node scripts/download-clangd.mjs",
     "tauri": "tauri",
     "dev": "npm run prepare:frontend && tauri dev",
-    "build": "npm run prepare:frontend && tauri build"
+    "build": "npm run prepare:clangd && npm run prepare:frontend && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
