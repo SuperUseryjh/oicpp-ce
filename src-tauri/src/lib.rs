@@ -100,6 +100,10 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
     .min_inner_size(940.0, 620.0)
     .resizable(true)
     .center()
+    // 必须关掉 Tauri 的原生拖放拦截：开启时拖放事件被原生层吃掉、不会到达页面，
+    // 渲染层依赖的 HTML5 拖拽（把标签页拖到分屏区域、拖文件进工作区）会全部失效，
+    // 表现为拖动时鼠标显示「禁止」
+    .drag_drop_enabled(false)
     .initialization_script(script);
 
     #[cfg(target_os = "macos")]

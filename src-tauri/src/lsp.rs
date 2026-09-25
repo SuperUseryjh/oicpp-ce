@@ -354,12 +354,21 @@ fn start(app: &AppHandle, options: &Map<String, Value>) -> Value {
         }
     }
 
-    let mut child = match Command::new(&clangd_path)
+    let mut command = Command::new(&clangd_path);
+    command
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    // Windows 下不要给 clangd 弹出黑色控制台窗口（GUI 进程 spawn 控制台程序默认会弹）
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = match command.spawn()
     {
         Ok(child) => child,
         Err(err) => {

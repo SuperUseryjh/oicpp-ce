@@ -63,39 +63,51 @@
         if (typeof CSSStyleDeclaration === 'undefined') {
             return;
         }
+        // 注意：不能靠改写 CSSStyleDeclaration.prototype 上的 backgroundImage ——
+        // 实测 WebView2 上该属性在原型上没有 setter（`getOwnPropertyDescriptor`
+        // 拿不到 set），所以改为观察内联 style 属性、直接改写其中的 file:// 地址。
         var proto = CSSStyleDeclaration.prototype;
-        var probeCount = 0;
-
-        ['backgroundImage', 'background'].forEach(function (prop) {
-            var descriptor = Object.getOwnPropertyDescriptor(proto, prop);
-            if (!descriptor || typeof descriptor.set !== 'function') {
-                reportDiagnostic('[背景] 无法拦截 style.' + prop + '（原型上无 setter）');
-                return;
-            }
-            Object.defineProperty(proto, prop, {
-                configurable: true,
-                enumerable: descriptor.enumerable,
-                get: descriptor.get,
-                set: function (value) {
-                    var rewritten = rewriteLocalFileUrls(value);
-                    // 只探前若干次，用于确认渲染层到底有没有设置背景
-                    if (probeCount < 10) {
-                        probeCount += 1;
-                        reportDiagnostic(
-                            '[背景] style.' + prop + ' <- ' + String(value).slice(0, 160) +
-                            ' => ' + String(rewritten).slice(0, 200),
-                            'info'
-                        );
-                    }
-                    descriptor.set.call(this, rewritten);
-                }
-            });
-        });
-
         var originalSetProperty = proto.setProperty;
         proto.setProperty = function (name, value, priority) {
             return originalSetProperty.call(this, name, rewriteLocalFileUrls(value), priority);
         };
+
+        var rewritten = 0;
+        var observer = new MutationObserver(function (records) {
+            for (var i = 0; i < records.length; i += 1) {
+                var target = records[i].target;
+                if (!target || typeof target.getAttribute !== 'function') {
+                    continue;
+                }
+                var inline = target.getAttribute('style');
+                if (!inline || inline.indexOf('file://') === -1) {
+                    continue;
+                }
+                var fixed = rewriteLocalFileUrls(inline);
+                if (fixed !== inline) {
+                    // 改写后不再含 file://，不会再次触发本条分支、不会死循环
+                    target.setAttribute('style', fixed);
+                    if (rewritten < 10) {
+                        rewritten += 1;
+                        reportDiagnostic('[背景] 已改写内联样式 => ' + fixed.slice(0, 200), 'info');
+                    }
+                }
+            }
+        });
+
+        var start = function () {
+            observer.observe(document.documentElement || document, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['style']
+            });
+        };
+        if (document.documentElement) {
+            start();
+        } else {
+            document.addEventListener('DOMContentLoaded', start);
+        }
     })();
 
     // ---------------------------------------------------------------- 诊断
@@ -660,6 +672,38 @@
                     t.window.getCurrentWindow().startDragging();
                 }
             } catch (_) { }
+        }, true);
+    } catch (_) { }
+
+    // ---------------------------------------------------------------- 点击诊断
+    // 用于定位「按钮点了没反应」：打印被点元素、该坐标的最顶层元素（判断是否被遮罩挡住）、
+    // 以及 pointer-events / disabled / 是否已有人 preventDefault。只记录前若干次。
+    function describeNode(node) {
+        if (!node || !node.tagName) return '(无)';
+        var id = node.id ? '#' + node.id : '';
+        var cls = (typeof node.className === 'string' && node.className.trim())
+            ? '.' + node.className.trim().split(/\s+/).slice(0, 3).join('.')
+            : '';
+        return node.tagName.toLowerCase() + id + cls;
+    }
+    try {
+        var clickProbe = 0;
+        document.addEventListener('click', function (ev) {
+            if (clickProbe >= 40 || !(ev.target instanceof HTMLElement)) return;
+            clickProbe += 1;
+            var target = ev.target;
+            var topmost = document.elementFromPoint(ev.clientX, ev.clientY);
+            var btn = target.closest('button, [role="button"], [class*="btn"], [class*="button"]') || target;
+            var style = window.getComputedStyle(btn);
+            reportDiagnostic(
+                '[点击] 目标=' + describeNode(target) +
+                ' 顶层=' + describeNode(topmost) +
+                ' 按钮=' + describeNode(btn) +
+                ' pointer-events=' + style.pointerEvents +
+                ' disabled=' + (btn.disabled === true) +
+                ' 默认已阻止=' + ev.defaultPrevented,
+                'info'
+            );
         }, true);
     } catch (_) { }
 
