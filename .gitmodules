@@ -1,0 +1,3 @@
+[submodule "oicpp-origin"]
+	path = oicpp-origin
+	url = https://github.com/mywwzh/oicpp

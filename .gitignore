@@ -1,0 +1,12 @@
+# 生成的前端产物（由 scripts/prepare-frontend.mjs 生成）
+/frontend/
+
+# 依赖
+node_modules/
+
+# Rust / Tauri
+/src-tauri/target/
+/src-tauri/gen/
+
+# 构建输出
+/dist/

@@ -1,0 +1,219 @@
+//! OICPP IDE —— Tauri 版应用入口。
+//!
+//! 架构：静态前端（`frontend/`，由 `scripts/prepare-frontend.mjs` 从 `oicpp-origin` 生成）
+//! + Rust 后端（本 crate）。前端通过注入的兼容层 (`inject.rs`) 用统一的
+//! `ipc_invoke` / `ipc_send` 命令访问后端，后端再按通道名分发到各业务模块。
+
+mod codec;
+mod compile;
+mod cloud;
+mod debugger;
+mod dlg;
+mod download;
+mod events;
+mod fsops;
+mod fsread;
+mod inject;
+mod ipc;
+mod lsp;
+mod menu;
+mod misc;
+mod paths;
+mod settings;
+mod terminal;
+mod toolchain;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use serde_json::Value;
+use tauri::{AppHandle, Manager, WebviewWindow};
+
+/// 允许窗口真正关闭（避免 CloseRequested 再次触发保存流程）
+pub(crate) static ALLOW_CLOSE: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+async fn ipc_invoke(
+    app: AppHandle,
+    window: WebviewWindow,
+    channel: String,
+    args: Vec<Value>,
+) -> Result<Value, String> {
+    match ipc::dispatch(&app, Some(&window), ipc::Kind::Invoke, &channel, &args).await {
+        Some(result) => result,
+        None => Err(format!("未注册的 IPC 通道: {channel}")),
+    }
+}
+
+#[tauri::command]
+async fn ipc_send(app: AppHandle, window: WebviewWindow, channel: String, args: Vec<Value>) {
+    if ipc::dispatch(&app, Some(&window), ipc::Kind::Send, &channel, &args)
+        .await
+        .is_none()
+    {
+        // 有些通道只实现了 invoke 语义，这里兜底再按 invoke 处理一次
+        let _ = ipc::dispatch(&app, Some(&window), ipc::Kind::Invoke, &channel, &args).await;
+    }
+}
+
+/// 打开设置窗口（compiler / editor / templates / backup）
+pub(crate) fn open_settings_window(app: &AppHandle, label: &str, page: &str, query: &str) {
+    if let Some(existing) = app.get_webview_window(label) {
+        let _ = existing.set_focus();
+        return;
+    }
+    let script = inject::build_script(&serde_json::json!({ "queryString": query }));
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::App(format!("renderer/settings/{page}").into()),
+    )
+    .title("OICPP IDE 设置")
+    .inner_size(980.0, 720.0)
+    .min_inner_size(720.0, 520.0)
+    .resizable(true)
+    .initialization_script(script);
+
+    if let Some(parent) = app.get_webview_window("main") {
+        builder = match builder.parent(&parent) {
+            Ok(builder) => builder,
+            Err(err) => {
+                eprintln!("设置窗口设置父窗口失败: {err}");
+                return;
+            }
+        };
+    }
+
+    if let Err(err) = builder.build() {
+        eprintln!("创建设置窗口失败: {err}");
+    }
+}
+
+fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
+    let script = inject::main_script();
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        app,
+        "main",
+        tauri::WebviewUrl::App("renderer/index.html".into()),
+    )
+    .title("OICPP IDE")
+    .inner_size(1440.0, 900.0)
+    .min_inner_size(940.0, 620.0)
+    .resizable(true)
+    .center()
+    .initialization_script(script);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .decorations(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.decorations(false);
+    }
+
+    let window = builder.build()?;
+
+    let menu = menu::build(app.handle());
+    let _ = window.set_menu(menu);
+
+    // 最大化 / 还原状态变化通知渲染进程
+    let handle = app.handle().clone();
+    let maximized_flag = std::sync::Arc::new(AtomicBool::new(false));
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::Resized(_) => {
+            if let Some(window) = handle.get_webview_window("main") {
+                let maximized = window.is_maximized().unwrap_or(false);
+                let previous = maximized_flag.swap(maximized, Ordering::SeqCst);
+                if maximized != previous {
+                    let channel = if maximized {
+                        "window-maximized"
+                    } else {
+                        "window-unmaximized"
+                    };
+                    events::broadcast_empty(&handle, channel);
+                }
+            }
+        }
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            if !ALLOW_CLOSE.load(Ordering::SeqCst) {
+                api.prevent_close();
+                events::broadcast_empty(&handle, "app-close-requested");
+                misc::request_save_all_and_close(&handle);
+            }
+        }
+        _ => {}
+    });
+
+    Ok(())
+}
+
+/// 处理命令行传入的文件 / 目录
+fn handle_startup_args(app: &AppHandle) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let target = args.into_iter().find(|arg| {
+        let trimmed = arg.trim();
+        !trimmed.is_empty()
+            && !trimmed.starts_with('-')
+            && std::path::Path::new(trimmed).exists()
+    });
+    let Some(target) = target else {
+        return;
+    };
+    let is_file = std::fs::metadata(&target).map(|m| m.is_file()).unwrap_or(false);
+    let workspace = if is_file {
+        paths::dirname(&target)
+    } else {
+        target.clone()
+    };
+    settings::set_startup_workspace(workspace);
+
+    if is_file {
+        let content = fsops::read_text_file(&target).unwrap_or_default();
+        let file_name = paths::basename(&target);
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            events::broadcast_one(
+                &handle,
+                "file-opened-from-args",
+                serde_json::json!({
+                    "path": target,
+                    "fileName": file_name,
+                    "content": content
+                }),
+            );
+        });
+    }
+}
+
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .invoke_handler(tauri::generate_handler![ipc_invoke, ipc_send])
+        .on_menu_event(|app, event| {
+            if let Some(channel) = menu::channel_of(event.id().as_ref()) {
+                events::broadcast_empty(app, channel);
+            }
+        })
+        .setup(|app| {
+            paths::oicpp_dir();
+            settings::load();
+            setup_main_window(app)?;
+            let handle = app.handle().clone();
+            handle_startup_args(&handle);
+            Ok(())
+        })
+        .build(tauri::generate_context!())
+        .expect("启动 OICPP IDE 失败")
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                debugger::shutdown();
+                let _ = settings::save();
+            }
+        });
+}

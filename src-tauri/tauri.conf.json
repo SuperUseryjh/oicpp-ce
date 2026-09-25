@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OICPP IDE",
+  "mainBinaryName": "oicpp-ide",
+  "version": "1.5.0",
+  "identifier": "com.oicpp.ide",
+  "build": {
+    "beforeDevCommand": "npm run prepare:frontend",
+    "beforeBuildCommand": "npm run prepare:frontend",
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: http: https: asset: http://asset.localhost; font-src 'self' data:; worker-src 'self' blob: file: http://tauri.localhost tauri: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost https://oicpp.mywwzh.top https://auth.mywwzh.top; frame-src 'self' https: http: data: blob:; media-src 'self' data: blob: https: http:;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources/*"],
+    "shortDescription": "OICPP IDE for competitive programming",
+    "longDescription": "OICPP IDE 是针对信息学竞赛打造的一体化集成开发环境",
+    "linux": {
+      "deb": {
+        "depends": ["libgtk-3-0", "libnss3", "libxss1", "libasound2", "libxtst6", "libc6"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
+    }
+  }
+}
