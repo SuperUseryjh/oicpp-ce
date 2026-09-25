@@ -94,6 +94,8 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
     // WebviewWindowBuilder 上没有对应方法。而它必须关掉 —— 开启时 Tauri 的原生层会吃掉
     // 拖放事件，渲染层依赖的 HTML5 拖拽（把标签页拖到分屏区域、拖文件进工作区）会全部失效，
     // 表现为拖动时鼠标显示「禁止」。
+    // mut 只在 macOS 分支里用到（追加 titleBarStyle / hiddenTitle）
+    #[allow(unused_mut)]
     let mut config_json = serde_json::json!({
         "label": "main",
         "url": "renderer/index.html",
