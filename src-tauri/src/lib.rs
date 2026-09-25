@@ -90,35 +90,41 @@ pub(crate) fn open_settings_window(app: &AppHandle, label: &str, page: &str, que
 
 fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
     let script = inject::main_script();
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        app,
-        "main",
-        tauri::WebviewUrl::App("renderer/index.html".into()),
-    )
-    .title("OICPP IDE")
-    .inner_size(1440.0, 900.0)
-    .min_inner_size(940.0, 620.0)
-    .resizable(true)
-    .center()
-    // 必须关掉 Tauri 的原生拖放拦截：开启时拖放事件被原生层吃掉、不会到达页面，
-    // 渲染层依赖的 HTML5 拖拽（把标签页拖到分屏区域、拖文件进工作区）会全部失效，
-    // 表现为拖动时鼠标显示「禁止」
-    .drag_drop_enabled(false)
-    .initialization_script(script);
-
+    // 用 from_config 而不是 `new() + 链式方法`：`dragDropEnabled` 只存在于窗口配置里，
+    // WebviewWindowBuilder 上没有对应方法。而它必须关掉 —— 开启时 Tauri 的原生层会吃掉
+    // 拖放事件，渲染层依赖的 HTML5 拖拽（把标签页拖到分屏区域、拖文件进工作区）会全部失效，
+    // 表现为拖动时鼠标显示「禁止」。
+    let mut config_json = serde_json::json!({
+        "label": "main",
+        "url": "renderer/index.html",
+        "title": "OICPP IDE",
+        "width": 1440.0,
+        "height": 900.0,
+        "minWidth": 940.0,
+        "minHeight": 620.0,
+        "resizable": true,
+        "center": true,
+        "dragDropEnabled": false,
+        "decorations": !cfg!(target_os = "macos"),
+    });
     #[cfg(target_os = "macos")]
     {
-        builder = builder
-            .decorations(true)
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true);
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        builder = builder.decorations(false);
+        config_json["titleBarStyle"] = serde_json::json!("overlay");
+        config_json["hiddenTitle"] = serde_json::json!(true);
     }
 
-    let window = builder.build()?;
+    let window_config: tauri::utils::config::WindowConfig =
+        match serde_json::from_value(config_json) {
+            Ok(config) => config,
+            Err(err) => {
+                eprintln!("主窗口配置解析失败: {err}");
+                return Ok(());
+            }
+        };
+
+    let window = tauri::WebviewWindowBuilder::from_config(app, &window_config)?
+        .initialization_script(script)
+        .build()?;
 
     let menu = menu::build(app.handle());
     let _ = window.set_menu(menu);
