@@ -189,6 +189,30 @@ fn restore_startup_workspace() {
     }
 }
 
+/// 把资源目录内容写进日志，便于确认打包资源（clangd / ConsolePauser 等）是否就位
+fn log_resource_layout(app: &AppHandle) {
+    let root = paths::resource_dir(app);
+    let mut entries: Vec<String> = std::fs::read_dir(&root)
+        .map(|iter| {
+            iter.filter_map(|entry| entry.ok())
+                .map(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if entry.path().is_dir() {
+                        format!("{name}/")
+                    } else {
+                        name
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    entries.sort();
+    misc::log_line(
+        "info",
+        &format!("[资源] {} => {}", root.display(), entries.join(", ")),
+    );
+}
+
 /// 处理命令行传入的文件 / 目录
 fn handle_startup_args(app: &AppHandle) {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -248,6 +272,7 @@ pub fn run() {
             settings::load();
             // 必须在窗口创建/渲染层取「待打开工作区」之前准备好
             restore_startup_workspace();
+            log_resource_layout(app.handle());
             setup_main_window(app)?;
             let handle = app.handle().clone();
             // 窗口外观（透明度 / 玻璃效果）与启动自动检查更新

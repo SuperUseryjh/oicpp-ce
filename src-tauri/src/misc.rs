@@ -98,6 +98,11 @@ fn close_main(app: &AppHandle) {
     }
 }
 
+/// 写一条自定义日志（供其它模块输出诊断信息）
+pub(crate) fn log_line(level: &str, message: &str) {
+    write_log(level, &json!([message]), None);
+}
+
 pub(crate) fn request_save_all_and_close(app: &AppHandle) {
     events::broadcast_empty(app, "request-save-all");
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();

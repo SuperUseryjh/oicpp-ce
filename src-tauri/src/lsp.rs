@@ -146,7 +146,24 @@ fn ensure_clangd(app: &AppHandle) -> Option<PathBuf> {
         }
     }
 
-    find_in_path(paths::clangd_executable_name())
+    let from_path = find_in_path(paths::clangd_executable_name());
+    if from_path.is_none() {
+        // 定位失败是「编辑器空白」的最常见原因（渲染层把 LSP 启动失败当致命错误），
+        // 所以把查过的位置写进日志，便于区分「没打包进来」和「打包了但路径不对」
+        let resource_root = paths::resource_dir(app);
+        crate::misc::log_line(
+            "warn",
+            &format!(
+                "[LSP] 未找到 clangd。用户目录 {}（存在 {}）/ 打包目录 {}（存在 {}）/ PATH 中的 {}",
+                user_root.display(),
+                user_root.is_dir(),
+                resource_root.join("clangd").display(),
+                resource_root.join("clangd").is_dir(),
+                paths::clangd_executable_name()
+            ),
+        );
+    }
+    from_path
 }
 
 // ------------------------------------------------------------------ 帧读写

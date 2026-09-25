@@ -53,7 +53,7 @@
                 filePath = filePath.slice(1);
             }
             var converted = convertFileSrc(filePath);
-            reportDiagnostic('[本地资源] ' + filePath + ' -> ' + converted);
+            reportDiagnostic('[本地资源] ' + filePath + ' -> ' + converted, 'info');
             var q = quote || '';
             return 'url(' + q + converted + q + ')';
         });
@@ -64,10 +64,12 @@
             return;
         }
         var proto = CSSStyleDeclaration.prototype;
+        var probeCount = 0;
 
         ['backgroundImage', 'background'].forEach(function (prop) {
             var descriptor = Object.getOwnPropertyDescriptor(proto, prop);
             if (!descriptor || typeof descriptor.set !== 'function') {
+                reportDiagnostic('[背景] 无法拦截 style.' + prop + '（原型上无 setter）');
                 return;
             }
             Object.defineProperty(proto, prop, {
@@ -75,7 +77,17 @@
                 enumerable: descriptor.enumerable,
                 get: descriptor.get,
                 set: function (value) {
-                    descriptor.set.call(this, rewriteLocalFileUrls(value));
+                    var rewritten = rewriteLocalFileUrls(value);
+                    // 只探前若干次，用于确认渲染层到底有没有设置背景
+                    if (probeCount < 10) {
+                        probeCount += 1;
+                        reportDiagnostic(
+                            '[背景] style.' + prop + ' <- ' + String(value).slice(0, 160) +
+                            ' => ' + String(rewritten).slice(0, 200),
+                            'info'
+                        );
+                    }
+                    descriptor.set.call(this, rewritten);
                 }
             });
         });
@@ -93,7 +105,7 @@
     var DIAGNOSTIC_LIMIT = 50;
     var diagnosticCount = 0;
 
-    function reportDiagnostic(message) {
+    function reportDiagnostic(message, level) {
         if (diagnosticCount >= DIAGNOSTIC_LIMIT) {
             return;
         }
@@ -105,7 +117,7 @@
             }
             var pending = t.core.invoke('ipc_send', {
                 channel: 'logger-log',
-                args: [{ level: 'error', args: [message] }]
+                args: [{ level: level || 'error', args: [message] }]
             });
             // 必须吞掉失败，否则 invoke 被拒 → unhandledrejection → 递归上报
             if (pending && typeof pending.catch === 'function') {
