@@ -31,32 +31,27 @@ mod update;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager};
 
 /// 允许窗口真正关闭（避免 CloseRequested 再次触发保存流程）
 pub(crate) static ALLOW_CLOSE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-async fn ipc_invoke(
-    app: AppHandle,
-    window: WebviewWindow,
-    channel: String,
-    args: Vec<Value>,
-) -> Result<Value, String> {
-    match ipc::dispatch(&app, Some(&window), ipc::Kind::Invoke, &channel, &args).await {
+async fn ipc_invoke(app: AppHandle, channel: String, args: Vec<Value>) -> Result<Value, String> {
+    match ipc::dispatch(&app, ipc::Kind::Invoke, &channel, &args).await {
         Some(result) => result,
         None => Err(format!("未注册的 IPC 通道: {channel}")),
     }
 }
 
 #[tauri::command]
-async fn ipc_send(app: AppHandle, window: WebviewWindow, channel: String, args: Vec<Value>) {
-    if ipc::dispatch(&app, Some(&window), ipc::Kind::Send, &channel, &args)
+async fn ipc_send(app: AppHandle, channel: String, args: Vec<Value>) {
+    if ipc::dispatch(&app, ipc::Kind::Send, &channel, &args)
         .await
         .is_none()
     {
         // 有些通道只实现了 invoke 语义，这里兜底再按 invoke 处理一次
-        let _ = ipc::dispatch(&app, Some(&window), ipc::Kind::Invoke, &channel, &args).await;
+        let _ = ipc::dispatch(&app, ipc::Kind::Invoke, &channel, &args).await;
     }
 }
 
@@ -155,6 +150,27 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 是否存在可恢复的工作区（`lastOpen` 优先，其次最近文件列表）
+fn has_restorable_workspace() -> bool {
+    let last = settings::get_str("lastOpen");
+    if !last.trim().is_empty() && std::path::Path::new(&last).exists() {
+        return true;
+    }
+    settings::get_value("recentFiles")
+        .and_then(|value| value.as_array().cloned())
+        .map(|list| {
+            list.iter().any(|item| {
+                let path = item
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| item.get("path").and_then(|p| p.as_str()).map(str::to_string));
+                path.map(|p| std::path::Path::new(&p).exists())
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// 处理命令行传入的文件 / 目录
 fn handle_startup_args(app: &AppHandle) {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -173,7 +189,11 @@ fn handle_startup_args(app: &AppHandle) {
     } else {
         target.clone()
     };
-    settings::set_startup_workspace(workspace);
+    // 与原实现一致：已有可恢复的工作区时（lastOpen / 最近文件）保留它，
+    // 只把文件开在当前工作区里，不因命令行参数抢占工作区。
+    if !has_restorable_workspace() {
+        settings::set_startup_workspace(workspace);
+    }
 
     if is_file {
         let content = fsops::read_text_file(&target).unwrap_or_default();

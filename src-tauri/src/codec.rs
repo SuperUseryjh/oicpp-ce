@@ -11,16 +11,6 @@ pub enum Encoding {
     Gbk,
 }
 
-impl Encoding {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Encoding::Utf8 => "utf8",
-            Encoding::Utf16 => "utf16",
-            Encoding::Gbk => "gbk",
-        }
-    }
-}
-
 /// 对应 main.js 的 detectEncoding
 pub fn detect_encoding(bytes: &[u8]) -> Encoding {
     if bytes.len() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
@@ -93,16 +83,6 @@ pub fn fingerprint(content: &str) -> String {
     let digest = hasher.finalize();
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     format!("{}:{}", bytes.len(), hex)
-}
-
-/// md5 前 8 位（用于临时编译文件名，保持与 Electron 版命名风格一致）
-pub fn short_hash(input: &str) -> String {
-    use sha1::{Digest, Sha1};
-    let mut hasher = Sha1::new();
-    hasher.update(input.as_bytes());
-    let digest = hasher.finalize();
-    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    hex.chars().take(8).collect()
 }
 
 /// SHA-256 十六进制摘要（用于编译缓存签名）

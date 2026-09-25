@@ -85,18 +85,43 @@ fn compiler_bin_dirs(compiler_path: &str) -> Vec<PathBuf> {
     dirs
 }
 
-/// 在 PATH 前面追加编译器目录
-fn with_compiler_path(cmd: &mut tokio::process::Command, compiler_path: &str) {
+/// 在 PATH 前面追加编译器目录，并把 testlib 目录加入头文件搜索路径。
+///
+/// 对应原实现的 `compilerEnv`：只有把 testlib 所在目录塞进
+/// `CPLUS_INCLUDE_PATH` / `C_INCLUDE_PATH` / `CPATH`，评测器里的
+/// `#include "testlib.h"` 才找得到（testlib 装在 ~/.oicpp/testlibs 下，
+/// 与被编译文件不同目录）。
+fn with_compiler_env(cmd: &mut tokio::process::Command, compiler_path: &str) {
     let dirs = compiler_bin_dirs(compiler_path);
-    if dirs.is_empty() {
+    if !dirs.is_empty() {
+        let mut entries: Vec<PathBuf> = dirs;
+        if let Some(existing) = std::env::var_os("PATH") {
+            entries.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(entries) {
+            cmd.env("PATH", joined);
+        }
+    }
+
+    let testlib = crate::settings::testlib_path();
+    if testlib.trim().is_empty() {
         return;
     }
-    let mut entries: Vec<PathBuf> = dirs;
-    if let Some(existing) = std::env::var_os("PATH") {
-        entries.extend(std::env::split_paths(&existing));
+    let testlib_file = PathBuf::from(&testlib);
+    if !testlib_file.exists() {
+        return;
     }
-    if let Ok(joined) = std::env::join_paths(entries) {
-        cmd.env("PATH", joined);
+    let Some(include_dir) = testlib_file.parent() else {
+        return;
+    };
+    for key in ["C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "CPATH"] {
+        let mut entries = vec![include_dir.to_path_buf()];
+        if let Some(existing) = std::env::var_os(key) {
+            entries.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(entries) {
+            cmd.env(key, joined);
+        }
     }
 }
 
@@ -380,7 +405,7 @@ async fn compile_source(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
-    with_compiler_path(&mut cmd, compiler_path);
+    with_compiler_env(&mut cmd, compiler_path);
 
     let mut child = cmd
         .spawn()
@@ -641,7 +666,7 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::piped());
-    with_compiler_path(&mut cmd, &crate::settings::compiler_path());
+    with_compiler_env(&mut cmd, &crate::settings::compiler_path());
 
     let started = Instant::now();
     let mut child = match cmd.spawn() {
@@ -850,6 +875,7 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
     ))
 }
 
+#[cfg(windows)]
 async fn ensure_console_pauser(app: &tauri::AppHandle) -> Result<String, String> {
     let target = paths::console_pauser_path();
     if target.exists() {
@@ -1082,7 +1108,7 @@ async fn run_interactive(ipc: &Ipc<'_>) -> Result<Value, String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    with_compiler_path(&mut contestant_cmd, &compiler_path);
+    with_compiler_env(&mut contestant_cmd, &compiler_path);
 
     let mut grader_cmd = tokio::process::Command::new(&grader_abs);
     grader_cmd
@@ -1093,7 +1119,7 @@ async fn run_interactive(ipc: &Ipc<'_>) -> Result<Value, String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    with_compiler_path(&mut grader_cmd, &compiler_path);
+    with_compiler_env(&mut grader_cmd, &compiler_path);
 
     let mut contestant = match contestant_cmd.spawn() {
         Ok(child) => child,
@@ -1357,7 +1383,7 @@ pub async fn run_child_capture(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
-    with_compiler_path(&mut cmd, &crate::settings::compiler_path());
+    with_compiler_env(&mut cmd, &crate::settings::compiler_path());
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let mut stdout_pipe = child.stdout.take();

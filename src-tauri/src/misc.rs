@@ -19,12 +19,6 @@ static CLOSE_WAITER: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     Lazy::new(|| Mutex::new(None));
 static CURRENT_LOG: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 static LOG_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
-/// 渲染进程上报的当前工作区（对应 main.js 的 currentExternalWorkspacePath）
-static EXTERNAL_WORKSPACE: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
-
-pub(crate) fn external_workspace() -> Option<String> {
-    EXTERNAL_WORKSPACE.lock().ok().and_then(|guard| guard.clone())
-}
 
 // ------------------------------------------------------------------ 日志
 
@@ -611,13 +605,10 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
 
         // ---- 工作区上报（渲染进程为唯一事实来源）
-        "workspace-path-report" => {
-            let folder = ipc.opt_string_arg(0).filter(|value| !value.trim().is_empty());
-            if let Ok(mut guard) = EXTERNAL_WORKSPACE.lock() {
-                *guard = folder;
-            }
-            Some(Ok(Value::Null))
-        }
+        //
+        // 原实现把它存下来供「样例抓取 HTTP 服务」使用，该服务尚未移植，
+        // 因此这里只保留通道以免渲染层报未注册，不保存状态。
+        "workspace-path-report" => Some(Ok(Value::Null)),
 
         // ---- 请求转发（渲染层自行处理，这里只做日志）
         "request-new-file" | "request-open-file" | "request-save-file" => Some(Ok(Value::Null)),

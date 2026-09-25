@@ -6,10 +6,8 @@
 //!
 //! 这里按模块顺序询问，谁认领了通道谁负责处理。
 
-use std::future::Future;
-
 use serde_json::{Map, Value};
-use tauri::{AppHandle, WebviewWindow};
+use tauri::AppHandle;
 
 use crate::events;
 
@@ -24,7 +22,6 @@ pub struct Ipc<'a> {
     pub kind: Kind,
     pub channel: &'a str,
     pub args: &'a [Value],
-    pub window: Option<&'a WebviewWindow>,
 }
 
 impl<'a> Ipc<'a> {
@@ -38,13 +35,6 @@ impl<'a> Ipc<'a> {
 
     pub fn string_arg(&self, idx: usize) -> String {
         crate::paths::value_to_string(self.args.get(idx))
-    }
-
-    pub fn opt_string_arg(&self, idx: usize) -> Option<String> {
-        match self.args.get(idx) {
-            Some(Value::String(s)) => Some(s.clone()),
-            _ => None,
-        }
     }
 
     /// 与 JS 的 `options.field` 语义一致：缺失返回空字符串
@@ -61,10 +51,6 @@ impl<'a> Ipc<'a> {
             Some(Value::String(s)) => s.parse::<f64>().ok(),
             _ => None,
         }
-    }
-
-    pub fn bool_arg(&self, idx: usize) -> bool {
-        crate::paths::value_truthy(self.args.get(idx))
     }
 
     pub fn emit(&self, channel: &str, args: Vec<Value>) {
@@ -84,29 +70,9 @@ impl<'a> Ipc<'a> {
     }
 }
 
-/// 便于模块书写：`Value::from(x)`
-pub fn obj(pairs: Vec<(&str, Value)>) -> Value {
-    let mut map = Map::new();
-    for (k, v) in pairs {
-        map.insert(k.to_string(), v);
-    }
-    Value::Object(map)
-}
-
-pub trait IntoValue {
-    fn into_value(self) -> Value;
-}
-
-impl IntoValue for Value {
-    fn into_value(self) -> Value {
-        self
-    }
-}
-
 /// 分发入口
 pub async fn dispatch(
     app: &AppHandle,
-    window: Option<&WebviewWindow>,
     kind: Kind,
     channel: &str,
     args: &[Value],
@@ -116,7 +82,6 @@ pub async fn dispatch(
         kind,
         channel,
         args,
-        window,
     };
 
     // 依次询问各业务模块，谁认领了通道谁负责处理。
@@ -162,12 +127,4 @@ pub async fn dispatch(
     }
 
     None
-}
-
-/// 供模块内部复用：包一层便于书写
-pub fn boxed<F>(future: F) -> impl Future<Output = F::Output>
-where
-    F: Future,
-{
-    future
 }

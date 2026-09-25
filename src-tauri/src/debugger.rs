@@ -50,12 +50,6 @@ fn broadcast_one(channel: &str, payload: Value) {
     }
 }
 
-fn broadcast(channel: &str, args: Vec<Value>) {
-    if let Some(app) = app_handle() {
-        events::broadcast(&app, channel, args);
-    }
-}
-
 // ------------------------------------------------------------------ 变量/调用栈解析
 
 fn variable_node(name: &str, value: &str, var_type: &str) -> Value {

@@ -57,6 +57,8 @@ pub fn logs_dir() -> PathBuf {
     ensure(oicpp_dir().join("logs"))
 }
 
+/// ConsolePauser 的运行期副本（仅 Windows 使用）
+#[cfg(windows)]
 pub fn console_pauser_path() -> PathBuf {
     oicpp_dir().join("consolepauser.exe")
 }
