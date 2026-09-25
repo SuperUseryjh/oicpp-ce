@@ -4,6 +4,9 @@
 //! + Rust 后端（本 crate）。前端通过注入的兼容层 (`inject.rs`) 用统一的
 //! `ipc_invoke` / `ipc_send` 命令访问后端，后端再按通道名分发到各业务模块。
 
+// 设置项的 `json!` 字面量层级较深，默认 128 的递归上限不够用
+#![recursion_limit = "512"]
+
 mod browser;
 mod codec;
 mod compile;

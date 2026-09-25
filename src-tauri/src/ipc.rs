@@ -119,27 +119,47 @@ pub async fn dispatch(
         window,
     };
 
-    macro_rules! ask {
-        ($module:path) => {
-            if let Some(result) = $module::dispatch(&ipc).await {
-                return Some(result);
-            }
-        };
+    // 依次询问各业务模块，谁认领了通道谁负责处理。
+    // 这里刻意不使用宏：`$module:path` 片段后不能再接 `::`。
+    if let Some(result) = crate::settings::dispatch(&ipc).await {
+        return Some(result);
     }
-
-    ask!(crate::settings);
-    ask!(crate::fsops);
-    ask!(crate::fsread);
-    ask!(crate::misc);
-    ask!(crate::update);
-    ask!(crate::browser);
-    ask!(crate::compile);
-    ask!(crate::toolchain);
-    ask!(crate::download);
-    ask!(crate::terminal);
-    ask!(crate::lsp);
-    ask!(crate::debugger);
-    ask!(crate::cloud);
+    if let Some(result) = crate::fsops::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::fsread::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::misc::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::update::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::browser::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::compile::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::toolchain::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::download::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::terminal::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::lsp::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::debugger::dispatch(&ipc).await {
+        return Some(result);
+    }
+    if let Some(result) = crate::cloud::dispatch(&ipc).await {
+        return Some(result);
+    }
 
     None
 }
