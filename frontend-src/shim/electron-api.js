@@ -707,6 +707,46 @@
         }, true);
     } catch (_) { }
 
+    // ---------------------------------------------------------------- 异常与全局对象诊断
+    // 渲染层大量使用内联 onclick（如 `window.oicppApp.openFolder()`、
+    // `dialogManager.confirmDialog()`）。这类处理器抛错时不会有任何日志，
+    // 表现就是「点了完全没反应」，所以必须把未捕获异常转发出来。
+    try {
+        window.addEventListener('error', function (ev) {
+            if (!ev || !ev.message) return; // 资源加载失败由上面的监听处理
+            var where = '';
+            if (ev.filename) {
+                where = ' @' + ev.filename.split('/').pop() + ':' + ev.lineno + ':' + ev.colno;
+            }
+            reportDiagnostic('[未捕获异常] ' + ev.message + where, 'error');
+        }, true);
+        window.addEventListener('unhandledrejection', function (ev) {
+            var reason = ev && ev.reason;
+            var text = reason && reason.message ? reason.message : String(reason);
+            reportDiagnostic('[未处理的 Promise 拒绝] ' + text, 'error');
+        }, true);
+    } catch (_) { }
+
+    // 启动后一次性检查内联处理器依赖的全局对象是否就位
+    try {
+        var probeGlobals = function () {
+            var names = ['oicppApp', 'dialogManager', 'sidebarManager', 'monaco', 'i18n'];
+            var missing = [];
+            for (var i = 0; i < names.length; i += 1) {
+                if (typeof window[names[i]] === 'undefined') missing.push(names[i]);
+            }
+            reportDiagnostic(
+                '[全局] 缺失: ' + (missing.length ? missing.join(', ') : '(无)'),
+                missing.length ? 'error' : 'info'
+            );
+        };
+        if (document.readyState === 'complete') {
+            probeGlobals();
+        } else {
+            window.addEventListener('load', function () { setTimeout(probeGlobals, 1500); });
+        }
+    } catch (_) { }
+
     // ---------------------------------------------------------------- 剪贴板 / 外链全局处理（对应 preload.js）
     function showToast(message, type, durationMs) {
         try {

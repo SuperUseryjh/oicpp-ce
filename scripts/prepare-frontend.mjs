@@ -2,7 +2,8 @@
  * 生成 Tauri 前端产物目录 `frontend/`。
  *
  * 设计说明：
- * - 原项目（`oicpp-origin/`，Electron）**只读**，本脚本仅从中复制资源，不做任何修改。
+ * - 渲染层源码已复制进本仓库（`frontend-src/`），本脚本只做「复制 + 路径适配」。
+ *   `oicpp-origin/` 仅作为上游参考保留（用于对比合并），构建不再依赖它。
  * - 复制过来的渲染层代码保持原样，仅在复制副本上做两类必要的路径/参数适配：
  *   1. `../../node_modules/...` -> `../../vendor/...`（Tauri 不再暴露 node_modules）
  *   2. 设置窗口的 query 参数回退到 `window.__OICPP_QUERY_STRING__`（Tauri 自定义协议不带 search）
@@ -19,8 +20,9 @@ import * as esbuild from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const ORIGIN = path.join(ROOT, 'oicpp-origin');
-const ORIGIN_SRC = path.join(ORIGIN, 'src');
+// 渲染层源码在本仓库内（frontend-src/），构建只从这里取。
+// `oicpp-origin/` 子模块仅作上游参考（对比合并用），不参与构建。
+const SELF_SRC = path.join(ROOT, 'frontend-src');
 const OUT = path.join(ROOT, 'frontend');
 const VENDOR = path.join(OUT, 'vendor');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
@@ -88,7 +90,7 @@ function assertExists(target, what) {
 }
 
 async function main() {
-  assertExists(ORIGIN_SRC, 'oicpp-origin/src');
+  assertExists(path.join(SELF_SRC, 'renderer'), 'frontend-src/renderer');
   assertExists(NODE_MODULES, 'node_modules');
 
   log('清理输出目录');
@@ -97,16 +99,16 @@ async function main() {
 
   // ---------------------------------------------------------------- 1. 渲染层
   log('复制渲染层 / 语言包 / 工具脚本');
-  copyDir(path.join(ORIGIN_SRC, 'renderer'), path.join(OUT, 'renderer'));
-  copyDir(path.join(ORIGIN_SRC, 'lang'), path.join(OUT, 'lang'));
+  copyDir(path.join(SELF_SRC, 'renderer'), path.join(OUT, 'renderer'));
+  copyDir(path.join(SELF_SRC, 'lang'), path.join(OUT, 'lang'));
   ensureDir(path.join(OUT, 'utils'));
-  copyFile(path.join(ORIGIN_SRC, 'utils', 'font-detector.js'), path.join(OUT, 'utils', 'font-detector.js'));
+  copyFile(path.join(SELF_SRC, 'utils', 'font-detector.js'), path.join(OUT, 'utils', 'font-detector.js'));
 
   // 根目录静态资源（图标 / 版本 / PDF 文档）
-  copyFile(path.join(ORIGIN, 'oicpp.ico'), path.join(OUT, 'oicpp.ico'));
-  copyFile(path.join(ORIGIN, 'version.txt'), path.join(OUT, 'version.txt'));
-  if (fs.existsSync(path.join(ORIGIN, 'sampleTesterApiDoc.pdf'))) {
-    copyFile(path.join(ORIGIN, 'sampleTesterApiDoc.pdf'), path.join(OUT, 'sampleTesterApiDoc.pdf'));
+  copyFile(path.join(SELF_SRC, 'oicpp.ico'), path.join(OUT, 'oicpp.ico'));
+  copyFile(path.join(SELF_SRC, 'version.txt'), path.join(OUT, 'version.txt'));
+  if (fs.existsSync(path.join(SELF_SRC, 'sampleTesterApiDoc.pdf'))) {
+    copyFile(path.join(SELF_SRC, 'sampleTesterApiDoc.pdf'), path.join(OUT, 'sampleTesterApiDoc.pdf'));
   }
 
   // ---------------------------------------------------------------- 2. vendor

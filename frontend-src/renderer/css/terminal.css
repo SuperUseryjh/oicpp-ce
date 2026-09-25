@@ -1,0 +1,221 @@
+.editor-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.integrated-terminal-panel {
+    width: 100%;
+    height: 290px;
+    min-height: 220px;
+    max-height: 65vh;
+    border-top: 1px solid var(--border-color, #3c3c3c);
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+body.glass-effect-enabled .integrated-terminal-panel {
+    background: var(--glass-surface, rgba(16, 19, 27, 0.42));
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur, 18px) * 0.65));
+    backdrop-filter: blur(calc(var(--glass-blur, 18px) * 0.65));
+}
+
+body.glass-effect-enabled .integrated-terminal-header,
+body.glass-effect-enabled .integrated-terminal-tabs {
+    background: var(--glass-tab, rgba(255, 255, 255, 0.05));
+}
+
+body.glass-effect-enabled .integrated-terminal-body {
+    background: transparent;
+}
+
+.integrated-terminal-panel.collapsed {
+    display: none;
+}
+
+.integrated-terminal-resizer {
+    height: 4px;
+    cursor: row-resize;
+    background: transparent;
+    border-bottom: 1px solid transparent;
+}
+
+.integrated-terminal-resizer:hover,
+.integrated-terminal-resizer.dragging {
+    border-bottom-color: var(--primary-color, #007acc);
+}
+
+.integrated-terminal-header {
+    height: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 0 10px;
+    border-bottom: 1px solid var(--border-color, #3c3c3c);
+    background: rgba(0, 0, 0, 0.14);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+.integrated-terminal-title {
+    font-size: 12px;
+    color: var(--text-color, #cccccc);
+    letter-spacing: 0.3px;
+}
+
+.integrated-terminal-header-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.integrated-terminal-tabs {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-color, #3c3c3c);
+    background: rgba(0, 0, 0, 0.12);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+}
+
+.integrated-terminal-tab {
+    border: none;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    cursor: pointer;
+    color: var(--text-color, #cccccc);
+    background: rgba(0, 0, 0, 0.08);
+    border-right: 1px solid var(--border-color, #3c3c3c);
+}
+
+.integrated-terminal-tab.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--tab-active-fg, #ffffff);
+}
+
+.integrated-terminal-tab.exited .terminal-tab-label {
+    opacity: 0.65;
+}
+
+.integrated-terminal-tab.pending .terminal-tab-label::after {
+    content: '...';
+    margin-left: 2px;
+}
+
+.terminal-tab-label {
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.terminal-tab-close {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+.integrated-terminal-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: transparent;
+}
+
+.integrated-terminal-pane {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 6px 8px;
+}
+
+.integrated-terminal-pane.active {
+    display: block;
+}
+
+.integrated-terminal-mount {
+    width: 100%;
+    height: 100%;
+}
+
+.integrated-terminal-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-secondary, #9a9a9a);
+    font-size: 12px;
+    padding: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+    pointer-events: none;
+}
+
+body.theme-light .integrated-terminal-body,
+body[data-theme="light"] .integrated-terminal-body,
+body[data-editor-theme="light"] .integrated-terminal-body {
+    background: transparent;
+}
+
+body.theme-light .integrated-terminal-mount .xterm,
+body[data-theme="light"] .integrated-terminal-mount .xterm,
+body[data-editor-theme="light"] .integrated-terminal-mount .xterm {
+    background: transparent;
+}
+
+.integrated-terminal-mount .xterm {
+    font-family: var(--editor-font-family, 'Consolas') !important;
+    font-size: 14px !important;
+    background: transparent !important;
+}
+
+.integrated-terminal-mount .xterm-viewport,
+.integrated-terminal-mount .xterm-screen,
+.integrated-terminal-mount .xterm-scroll-area {
+    background: transparent !important;
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-header {
+    background: rgba(255, 255, 255, 0.84);
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-title {
+    color: #2b2f36;
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-tabs {
+    background: rgba(255, 255, 255, 0.76);
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-tab {
+    color: #3d434c;
+    background: rgba(0, 0, 0, 0.03);
+    border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-tab.active {
+    color: #111827;
+    background: rgba(11, 87, 208, 0.14);
+}
+
+.integrated-terminal-panel.terminal-theme-light .integrated-terminal-empty {
+    color: #57606a;
+}
+
+@media (max-width: 960px) {
+    .integrated-terminal-panel {
+        height: 240px;
+    }
+}
