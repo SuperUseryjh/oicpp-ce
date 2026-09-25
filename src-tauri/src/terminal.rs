@@ -10,9 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
-use portable_pty::{
-    native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize, PtySystem, SlavePty,
-};
+use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use regex::Regex;
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;

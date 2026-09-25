@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use tauri::AppHandle;
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[derive(Default, Clone)]
 pub struct OpenOptions {
@@ -96,9 +96,12 @@ pub async fn confirm(
     app.dialog()
         .message(message.to_string())
         .title(title.to_string())
-        .buttons(vec![yes.to_string(), no.to_string()])
-        .show(move |answer| {
-            let _ = tx.send(answer.to_string() == yes);
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            yes.to_string(),
+            no.to_string(),
+        ))
+        .show(move |confirmed| {
+            let _ = tx.send(confirmed);
         });
     rx.await.unwrap_or(false)
 }
@@ -108,6 +111,7 @@ pub async fn message(app: &AppHandle, title: &str, body: &str) {
     app.dialog()
         .message(body.to_string())
         .title(title.to_string())
+        .buttons(MessageDialogButtons::Ok)
         .show(move |_| {
             let _ = tx.send(());
         });

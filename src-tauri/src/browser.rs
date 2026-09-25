@@ -145,18 +145,15 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             let options = ipc.object_arg(0);
             let id = id_of(&options);
             let mut url_text = String::new();
-            let mut title = String::new();
             if let Ok(guard) = VIEWS.lock() {
                 if let Some(view) = guard.get(&id) {
                     if let Ok(url) = view.url() {
                         url_text = url.to_string();
                     }
-                    if let Ok(value) = view.title() {
-                        title = value;
-                    }
                 }
             }
-            Some(Ok(json!({ "url": url_text, "title": title })))
+            // 注：`tauri::Webview` 没有 title() 接口，标题由渲染层自行维护
+            Some(Ok(json!({ "url": url_text, "title": "" })))
         }
         "browser-webview-close" => {
             let options = ipc.object_arg(0);
@@ -235,9 +232,10 @@ async fn create(ipc: &Ipc<'_>) -> Result<Value, String> {
         }
     }
 
+    // 注意：`add_child` 定义在 `Window` 上（不是 `WebviewWindow`）
     let window = ipc
         .app
-        .get_webview_window("main")
+        .get_window("main")
         .ok_or_else(|| "主窗口不存在".to_string())?;
     let webview = window
         .add_child(

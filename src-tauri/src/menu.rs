@@ -40,7 +40,18 @@ pub fn rebuild(app: &AppHandle) {
 }
 
 pub fn build(app: &AppHandle<Wry>) -> tauri::menu::Menu<Wry> {
-    let sep = || PredefinedMenuItem::separator(app);
+    // `PredefinedMenuItem::*` 均返回 Result，这里统一解包
+    let sep = || {
+        PredefinedMenuItem::separator(app).expect("构建菜单分隔符失败")
+    };
+    let quit = || PredefinedMenuItem::quit(app, Some("退出")).expect("构建退出项失败");
+    let undo = || PredefinedMenuItem::undo(app, Some("撤销")).expect("构建撤销项失败");
+    let redo = || PredefinedMenuItem::redo(app, Some("重做")).expect("构建重做项失败");
+    let cut = || PredefinedMenuItem::cut(app, Some("剪切")).expect("构建剪切项失败");
+    let copy = || PredefinedMenuItem::copy(app, Some("复制")).expect("构建复制项失败");
+    let paste = || PredefinedMenuItem::paste(app, Some("粘贴")).expect("构建粘贴项失败");
+    let select_all =
+        || PredefinedMenuItem::select_all(app, Some("全选")).expect("构建全选项失败");
 
     let file_menu = SubmenuBuilder::new(app, "文件")
         .item(&item(app, "menu-new-file", "新建文件", Some("CmdOrCtrl+N")))
@@ -57,12 +68,7 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::menu::Menu<Wry> {
             "打开文件夹",
             Some("CmdOrCtrl+K"),
         ))
-        .item(&item(
-            app,
-            "menu-open-file-history",
-            "历史记录",
-            None,
-        ))
+        .item(&item(app, "menu-open-file-history", "历史记录", None))
         .item(&sep())
         .item(&item(app, "menu-save-file", "保存", Some("CmdOrCtrl+S")))
         .item(&item(
@@ -72,18 +78,18 @@ pub fn build(app: &AppHandle<Wry>) -> tauri::menu::Menu<Wry> {
             Some("CmdOrCtrl+Shift+S"),
         ))
         .item(&sep())
-        .item(&PredefinedMenuItem::quit(app, Some("退出")))
+        .item(&quit())
         .build()
         .expect("构建文件菜单失败");
 
     let edit_menu = SubmenuBuilder::new(app, "编辑")
-        .item(&PredefinedMenuItem::undo(app, Some("撤销")))
-        .item(&PredefinedMenuItem::redo(app, Some("重做")))
+        .item(&undo())
+        .item(&redo())
         .item(&sep())
-        .item(&PredefinedMenuItem::cut(app, Some("剪切")))
-        .item(&PredefinedMenuItem::copy(app, Some("复制")))
-        .item(&PredefinedMenuItem::paste(app, Some("粘贴")))
-        .item(&PredefinedMenuItem::select_all(app, Some("全选")))
+        .item(&cut())
+        .item(&copy())
+        .item(&paste())
+        .item(&select_all())
         .item(&sep())
         .item(&item(
             app,

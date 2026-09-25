@@ -792,7 +792,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             if !token.is_empty() {
                 form = form
                     .text("username", username())
-                    .text("login_token", token);
+                    .text("login_token", token.clone());
             }
 
             let mut request = http_client()

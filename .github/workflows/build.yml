@@ -28,10 +28,6 @@ jobs:
             target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin --bundles app,dmg"
             artifact: macos-arm64-artifacts
-          - platform: macos-13
-            target: x86_64-apple-darwin
-            args: "--target x86_64-apple-darwin --bundles app,dmg"
-            artifact: macos-x64-artifacts
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             args: "--bundles deb,appimage"

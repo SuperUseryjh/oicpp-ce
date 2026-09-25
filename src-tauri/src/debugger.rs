@@ -30,7 +30,7 @@ struct GdbSession {
 static GDB: Lazy<Mutex<Option<GdbSession>>> = Lazy::new(|| Mutex::new(None));
 static CMD_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 static RESPONSES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
-static NOTIFY: Lazy<tokio::sync::Notify> = Lazy::new(tokio::sync::Notify::new());
+static NOTIFY: Lazy<tokio::sync::Notify> = Lazy::new(|| tokio::sync::Notify::new());
 static INFERIOR_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 static APP: Lazy<Mutex<Option<AppHandle>>> = Lazy::new(|| Mutex::new(None));
 
@@ -540,8 +540,8 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
         *guard = Some(file_path.to_string());
     }
 
-    for line in breakpoints {
-        let _ = add_breakpoint(file_path, line).await;
+    for line in &breakpoints {
+        let _ = add_breakpoint(file_path, *line).await;
     }
 
     let mode = crate::settings::run_mode();

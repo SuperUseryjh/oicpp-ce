@@ -436,7 +436,7 @@ async fn compile_source(
     }
 
     let combined = format!("{stdout}\n{stderr}");
-    let (mut warnings, mut errors, diagnostics) = parse_diagnostics(&combined);
+    let (warnings, mut errors, diagnostics) = parse_diagnostics(&combined);
     if timed_out {
         errors.push("编译超时（120 秒），已终止编译器进程。".to_string());
     }
@@ -1379,7 +1379,7 @@ pub async fn run_child_capture(
     });
 
     let status = match tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait()).await {
-        Ok(Ok(status)) => Some(status.code()),
+        Ok(Ok(status)) => status.code(),
         Ok(Err(_)) => None,
         Err(_) => {
             let _ = child.kill().await;
