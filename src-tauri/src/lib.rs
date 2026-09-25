@@ -150,25 +150,43 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 是否存在可恢复的工作区（`lastOpen` 优先，其次最近文件列表）
-fn has_restorable_workspace() -> bool {
+/// 返回可恢复的工作区路径：`lastOpen` 优先，其次最近文件列表
+fn restorable_workspace() -> Option<String> {
     let last = settings::get_str("lastOpen");
     if !last.trim().is_empty() && std::path::Path::new(&last).exists() {
-        return true;
+        return Some(last);
     }
     settings::get_value("recentFiles")
         .and_then(|value| value.as_array().cloned())
-        .map(|list| {
-            list.iter().any(|item| {
+        .and_then(|list| {
+            list.iter().find_map(|item| {
                 let path = item
                     .as_str()
                     .map(str::to_string)
-                    .or_else(|| item.get("path").and_then(|p| p.as_str()).map(str::to_string));
-                path.map(|p| std::path::Path::new(&p).exists())
-                    .unwrap_or(false)
+                    .or_else(|| item.get("path").and_then(|p| p.as_str()).map(str::to_string))?;
+                if std::path::Path::new(&path).exists() {
+                    Some(path)
+                } else {
+                    None
+                }
             })
         })
-        .unwrap_or(false)
+}
+
+fn has_restorable_workspace() -> bool {
+    restorable_workspace().is_some()
+}
+
+/// 启动时恢复上次的工作区。对应原实现 `main.js` 的 `pendingStartupWorkspaceToOpen`：
+/// 渲染层启动后会取一次「待打开工作区」，主进程必须在这之前准备好，否则
+/// 重启后已打开的工作区会丢失（`lastOpen` / `lastOpenTabs` 存了却没人用）。
+fn restore_startup_workspace() {
+    if settings::get_value("autoOpenLastWorkspace").and_then(|value| value.as_bool()) == Some(false) {
+        return;
+    }
+    if let Some(target) = restorable_workspace() {
+        settings::set_startup_workspace(target);
+    }
 }
 
 /// 处理命令行传入的文件 / 目录
@@ -228,6 +246,8 @@ pub fn run() {
         .setup(|app| {
             paths::oicpp_dir();
             settings::load();
+            // 必须在窗口创建/渲染层取「待打开工作区」之前准备好
+            restore_startup_workspace();
             setup_main_window(app)?;
             let handle = app.handle().clone();
             // 窗口外观（透明度 / 玻璃效果）与启动自动检查更新

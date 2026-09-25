@@ -33,11 +33,30 @@
     // （tauri.conf.json 已开启 assetProtocol，scope 为 **）。
     var ASSET_ORIGIN = ENV.assetOrigin || 'asset://localhost';
 
+    /// 走 Tauri 官方 convertFileSrc，保证编码方式与运行时一致
+    function convertFileSrc(filePath) {
+        var core = window.__TAURI__ && window.__TAURI__.core;
+        if (core && typeof core.convertFileSrc === 'function') {
+            return core.convertFileSrc(filePath);
+        }
+        return ASSET_ORIGIN + '/' + encodeURIComponent(filePath);
+    }
+
     function rewriteLocalFileUrls(value) {
         if (typeof value !== 'string' || value.indexOf('file://') === -1) {
             return value;
         }
-        return value.replace(/file:\/\/+/g, ASSET_ORIGIN + '/');
+        return value.replace(/url\(\s*(['"]?)file:\/\/([^'")]+)\1\s*\)/gi, function (match, quote, rawPath) {
+            var filePath = decodeURIComponent(rawPath);
+            // `file:///C:/x` 去掉 file:// 后是 `/C:/x`，Windows 下去掉首个斜杠
+            if (/^\/[A-Za-z]:[\\/]/.test(filePath)) {
+                filePath = filePath.slice(1);
+            }
+            var converted = convertFileSrc(filePath);
+            reportDiagnostic('[本地资源] ' + filePath + ' -> ' + converted);
+            var q = quote || '';
+            return 'url(' + q + converted + q + ')';
+        });
     }
 
     (function patchStyleUrls() {

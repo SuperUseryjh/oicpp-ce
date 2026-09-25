@@ -118,7 +118,9 @@ async function main() {
   copyDir(path.join(NODE_MODULES, 'xterm-addon-fit', 'lib'), path.join(VENDOR, 'xterm-addon-fit', 'lib'));
   copyDir(
     path.join(NODE_MODULES, '@xterm', 'addon-unicode11', 'lib'),
-    path.join(VENDOR, 'xterm-addon-unicode11', 'lib')
+    // 目录名保持 `@xterm/addon-unicode11`，否则上面 `../../node_modules/` →
+    // `../../vendor/` 的重写会指向不存在的路径（index.html:685 引用的就是这个）
+    path.join(VENDOR, '@xterm', 'addon-unicode11', 'lib')
   );
   copyDir(path.join(NODE_MODULES, 'pdfjs-dist', 'build'), path.join(VENDOR, 'pdfjs-dist', 'build'));
   copyDir(path.join(NODE_MODULES, 'pdfjs-dist', 'web'), path.join(VENDOR, 'pdfjs-dist', 'web'));
@@ -191,11 +193,13 @@ async function main() {
   }
 
   // ---------------------------------------------------------------- 8. markdown / turndown 打包
+  // 产物必须落在 `renderer/shim/` 下：注入的 script 标签在 renderer/index.html 里，
+  // 写绝对路径 `shim/markdown-bundle.js` 会被解析成 `/renderer/shim/...`
   log('打包 markdown-bundle.js');
-  ensureDir(path.join(OUT, 'shim'));
+  ensureDir(path.join(OUT, 'renderer', 'shim'));
   await esbuild.build({
     entryPoints: [path.join(ROOT, 'frontend-src', 'shim', 'markdown-entry.js')],
-    outfile: path.join(OUT, 'shim', 'markdown-bundle.js'),
+    outfile: path.join(OUT, 'renderer', 'shim', 'markdown-bundle.js'),
     bundle: true,
     format: 'iife',
     platform: 'browser',
