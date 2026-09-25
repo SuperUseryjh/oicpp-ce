@@ -1258,7 +1258,7 @@ async fn run_interactive(ipc: &Ipc<'_>) -> Result<Value, String> {
 
     let output_limit_exceeded = ole.load(Ordering::SeqCst);
     let observed = captured.load(Ordering::SeqCst);
-    let stderr_joined = [grader_stderr, contestant_stderr]
+    let stderr_joined = [grader_stderr.clone(), contestant_stderr.clone()]
         .into_iter()
         .filter(|value| !value.is_empty())
         .collect::<Vec<String>>()

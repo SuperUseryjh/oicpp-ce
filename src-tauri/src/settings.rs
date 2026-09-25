@@ -755,17 +755,18 @@ fn apply_whitelisted_update(incoming: &Map<String, Value>) {
 
 /// 语言 / 主题变化只广播给设置窗口（与 Electron 版一致）
 fn broadcast_to_settings_windows(app: &tauri::AppHandle, channel: &str, payload: Value) {
+    use tauri::{Emitter, Manager};
+
     for label in [
         "compiler-settings",
         "editor-settings",
         "template-settings",
         "backup-settings",
     ] {
-        if let Some(window) = tauri::Manager::get_webview_window(app, label) {
-            let _ = tauri::Emitter::emit(
-                &window,
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.emit(
                 crate::events::EVENT_NAME,
-                json!({ "channel": channel, "args": [payload] }),
+                json!({ "channel": channel, "args": [payload.clone()] }),
             );
         }
     }
