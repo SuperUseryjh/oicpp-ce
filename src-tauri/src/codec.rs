@@ -104,3 +104,12 @@ pub fn short_hash(input: &str) -> String {
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     hex.chars().take(8).collect()
 }
+
+/// SHA-256 十六进制摘要（用于编译缓存签名）
+pub fn sha256_hex(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}

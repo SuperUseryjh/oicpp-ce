@@ -4,6 +4,7 @@
 //! + Rust 后端（本 crate）。前端通过注入的兼容层 (`inject.rs`) 用统一的
 //! `ipc_invoke` / `ipc_send` 命令访问后端，后端再按通道名分发到各业务模块。
 
+mod browser;
 mod codec;
 mod compile;
 mod cloud;
@@ -22,6 +23,7 @@ mod paths;
 mod settings;
 mod terminal;
 mod toolchain;
+mod update;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -205,6 +207,9 @@ pub fn run() {
             settings::load();
             setup_main_window(app)?;
             let handle = app.handle().clone();
+            // 窗口外观（透明度 / 玻璃效果）与启动自动检查更新
+            misc::apply_window_visuals(&handle);
+            update::schedule_auto_check(&handle);
             handle_startup_args(&handle);
             Ok(())
         })
@@ -214,6 +219,8 @@ pub fn run() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 debugger::shutdown();
                 let _ = settings::save();
+                // Windows 下静默拉起待安装的更新包
+                update::run_pending_installer_on_quit();
             }
         });
 }

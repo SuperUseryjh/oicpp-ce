@@ -198,6 +198,83 @@ fn handle_response(response: &str) {
     }
 }
 
+/// 仅当提示符之后（除空白外）没有其它内容时，才认定为一条完整响应。
+/// 这样可以避免被调试程序自身输出里恰好包含 `oicpp_gdb:` 文本造成误判。
+fn split_response(accumulator: &mut String) -> Option<String> {
+    let mut search_from = 0usize;
+    let mut chosen: Option<usize> = None;
+    while let Some(found) = accumulator[search_from..].find(GDB_PROMPT) {
+        let absolute = search_from + found;
+        let after = &accumulator[absolute + GDB_PROMPT.len()..];
+        if after.trim().is_empty() {
+            chosen = Some(absolute);
+            break;
+        }
+        search_from = absolute + 1;
+    }
+    let index = chosen?;
+    let response = accumulator[..index].to_string();
+    let rest = accumulator[index + GDB_PROMPT.len()..].to_string();
+    *accumulator = rest;
+    Some(response)
+}
+
+/// 判断某一行是否属于「必须交给响应解析处理」的 GDB 控制消息
+fn is_critical_control_line(line: &str) -> bool {
+    if line.is_empty() {
+        return false;
+    }
+    if line.starts_with('\u{1a}') {
+        return true;
+    }
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.starts_with("[Inferior ")
+        || trimmed.starts_with("[New Thread")
+        || trimmed.starts_with("[Switching to thread")
+        || trimmed.starts_with("[Thread ")
+    {
+        return true;
+    }
+    if trimmed.starts_with("Program received signal ")
+        || trimmed.starts_with("Program exited")
+        || trimmed.starts_with("Program terminated with signal")
+        || trimmed.starts_with("During startup program exited")
+    {
+        return true;
+    }
+    if trimmed.starts_with("Thread ") && trimmed.contains(" hit ") {
+        return true;
+    }
+    if trimmed.starts_with("Breakpoint ")
+        || trimmed.starts_with("Temporary breakpoint ")
+        || trimmed.starts_with("Catchpoint ")
+    {
+        return true;
+    }
+    false
+}
+
+/// 运行态下可安全作为「程序输出」转发的子串末尾（遇到第一条控制消息即停止）
+fn safe_drain_end(buffer: &str) -> usize {
+    let mut position = 0usize;
+    let mut safe_end = 0usize;
+    while position < buffer.len() {
+        let Some(relative) = buffer[position..].find('\n') else {
+            break;
+        };
+        let newline = position + relative;
+        if is_critical_control_line(&buffer[position..newline]) {
+            break;
+        }
+        safe_end = newline + 1;
+        position = newline + 1;
+    }
+    safe_end
+}
+
 fn start_reader(stdout: std::process::ChildStdout) {
     std::thread::spawn(move || {
         let mut stdout = stdout;
@@ -212,23 +289,26 @@ fn start_reader(stdout: std::process::ChildStdout) {
             accumulator.push_str(&String::from_utf8_lossy(&buffer[..read]));
 
             loop {
-                let Some(position) = accumulator.find(GDB_PROMPT) else {
+                let Some(response) = split_response(&mut accumulator) else {
                     break;
                 };
-                let response = accumulator[..position].to_string();
-                accumulator = accumulator[position + GDB_PROMPT.len()..].to_string();
                 if !response.trim().is_empty() {
                     handle_response(&response);
                 }
             }
 
-            // 没有提示符且有内容，且被调试程序正在运行 → 视为程序输出
+            // 没有完整提示符：运行中的程序输出需及时转发，但不能把 GDB 控制消息
+            // 当作程序输出消费掉，否则 program-exited / 断点事件会丢失。
             if !accumulator.is_empty()
                 && !accumulator.contains(GDB_PROMPT)
                 && INFERIOR_RUNNING.load(Ordering::SeqCst)
             {
-                let data = std::mem::take(&mut accumulator);
-                broadcast_one("debug-terminal-output", json!({ "data": data }));
+                let safe_end = safe_drain_end(&accumulator);
+                if safe_end > 0 {
+                    let data = accumulator[..safe_end].to_string();
+                    accumulator = accumulator[safe_end..].to_string();
+                    broadcast_one("debug-terminal-output", json!({ "data": data }));
+                }
             }
         }
     });

@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -13,6 +15,12 @@ use crate::paths;
 
 const COMPILE_TIMEOUT_MS: u64 = 120_000;
 const OUTPUT_LIMIT_BYTES: usize = 256 * 1024 * 1024;
+/// 编译缓存签名版本（与 Electron 版保持一致）
+const COMPILE_CACHE_VERSION: i64 = 1;
+/// 内存采样间隔（毫秒）
+const MEMORY_SAMPLE_INTERVAL_MS: u64 = 200;
+/// 轮询等待子进程的间隔
+const WAIT_POLL_MS: u64 = 10;
 
 // ------------------------------------------------------------------ 工具
 
@@ -94,6 +102,129 @@ fn with_compiler_path(cmd: &mut tokio::process::Command, compiler_path: &str) {
 
 fn decode(bytes: &[u8]) -> String {
     codec::decode_auto(bytes)
+}
+
+/// 文件修改时间（毫秒时间戳）
+fn mtime_ms(meta: &std::fs::Metadata) -> f64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as f64)
+        .unwrap_or(0.0)
+}
+
+fn absolute(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string())
+}
+
+/// 编译缓存签名文件：`<outputFile>.oicpp-cache`
+fn compile_cache_path(output_file: &str) -> String {
+    format!("{}.oicpp-cache", absolute(output_file))
+}
+
+/// 构造编译缓存记录（含 sha256 签名）
+fn build_cache_record(
+    input_file: &str,
+    output_file: &str,
+    compiler_path: &str,
+    compiler_args: &[String],
+    working_directory: &str,
+) -> Option<Value> {
+    let input_meta = std::fs::metadata(input_file).ok()?;
+    let compiler_meta = std::fs::metadata(compiler_path).ok()?;
+    let working_dir = if working_directory.trim().is_empty() {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    } else {
+        absolute(working_directory)
+    };
+
+    let payload = json!({
+        "cacheVersion": COMPILE_CACHE_VERSION,
+        "inputFile": absolute(input_file),
+        "inputSize": input_meta.len(),
+        "inputMtimeMs": mtime_ms(&input_meta),
+        "outputFile": absolute(output_file),
+        "compilerPath": absolute(compiler_path),
+        "compilerSize": compiler_meta.len(),
+        "compilerMtimeMs": mtime_ms(&compiler_meta),
+        "compilerArgs": compiler_args,
+        "workingDirectory": working_dir
+    });
+    let signature = codec::sha256_hex(&payload.to_string());
+    let mut record = payload;
+    if let Some(map) = record.as_object_mut() {
+        map.insert("signature".into(), Value::String(signature));
+    }
+    Some(record)
+}
+
+fn cache_signature(record: &Value) -> String {
+    record
+        .get("signature")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// 读取当前进程（或指定 pid）常驻内存字节数
+async fn read_process_memory_bytes(pid: u32) -> u64 {
+    if cfg!(target_os = "linux") {
+        if let Ok(content) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix("VmRSS:") {
+                    let kb = rest
+                        .trim()
+                        .trim_end_matches("kB")
+                        .trim()
+                        .replace([' ', ','], "")
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    return kb.saturating_mul(1024);
+                }
+            }
+        }
+        return 0;
+    }
+
+    if cfg!(windows) {
+        let output = tokio::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()
+            .await;
+        if let Ok(output) = output {
+            let text = String::from_utf8_lossy(&output.stdout).to_string();
+            if let Some(re) = regex::Regex::new(r#""([\d.,]+)\s*K""#).ok() {
+                if let Some(caps) = re.captures(&text) {
+                    let digits: String = caps
+                        .get(1)
+                        .map(|m| m.as_str())
+                        .unwrap_or("")
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect();
+                    let kb = digits.parse::<u64>().unwrap_or(0);
+                    return kb.saturating_mul(1024);
+                }
+            }
+        }
+        return 0;
+    }
+
+    let output = tokio::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .output()
+        .await;
+    match output {
+        Ok(output) => {
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            text.parse::<u64>().unwrap_or(0).saturating_mul(1024)
+        }
+        Err(_) => 0,
+    }
 }
 
 /// 解析 g++/clang 风格诊断输出
@@ -178,27 +309,57 @@ async fn compile_source(
         }
     }
 
-    // 编译缓存：源文件不比目标文件新时直接复用
-    let input_mtime = std::fs::metadata(&input).and_then(|m| m.modified()).ok();
-    let output_mtime = std::fs::metadata(&output).and_then(|m| m.modified()).ok();
-    if let (Some(input_mtime), Some(output_mtime)) = (input_mtime, output_mtime) {
-        if input_mtime <= output_mtime {
-            return Ok(json!({
-                "success": true,
-                "cached": true,
-                "exitCode": 0,
-                "stdout": "",
-                "stderr": "",
-                "warnings": [],
-                "errors": [],
-                "diagnostics": []
-            }));
-        }
-    }
-
     let mut args = parse_args_preserving_quotes(compiler_args);
     if !paths::is_windows() {
         args.retain(|arg| arg != "-static");
+    }
+
+    // 编译缓存：源文件 / 编译器 / 参数 / 工作目录签名全部一致时跳过编译
+    let cache_path = compile_cache_path(output_file);
+    let mut cache_record: Option<Value> = None;
+    if input.exists() && compiler.exists() {
+        cache_record = build_cache_record(
+            input_file,
+            output_file,
+            compiler_path,
+            &args,
+            working_directory,
+        );
+        if let Some(record) = cache_record.as_ref() {
+            let output_mtime = std::fs::metadata(&output)
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis() as f64)
+                .unwrap_or(0.0);
+            let input_mtime = record
+                .get("inputMtimeMs")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            if output_mtime >= input_mtime && Path::new(&cache_path).exists() {
+                if let Ok(text) = std::fs::read_to_string(&cache_path) {
+                    if let Ok(cached) = serde_json::from_str::<Value>(&text) {
+                        let version_ok = cached
+                            .get("cacheVersion")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(-1)
+                            == COMPILE_CACHE_VERSION;
+                        if version_ok && cache_signature(&cached) == cache_signature(record) {
+                            return Ok(json!({
+                                "success": true,
+                                "cached": true,
+                                "exitCode": 0,
+                                "stdout": "",
+                                "stderr": "",
+                                "warnings": [],
+                                "errors": [],
+                                "diagnostics": []
+                            }));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     let cwd = if working_directory.trim().is_empty() {
@@ -280,8 +441,27 @@ async fn compile_source(
         errors.push("编译超时（120 秒），已终止编译器进程。".to_string());
     }
 
+    let succeeded = exit_code == Some(0) && !timed_out;
+
+    // 编译成功且期间源文件 / 编译器未变化时写入缓存签名
+    if succeeded && output.exists() {
+        if let Some(previous) = cache_record.as_ref() {
+            if let Some(latest) = build_cache_record(
+                input_file,
+                output_file,
+                compiler_path,
+                &args,
+                working_directory,
+            ) {
+                if cache_signature(&latest) == cache_signature(previous) {
+                    let _ = std::fs::write(&cache_path, latest.to_string());
+                }
+            }
+        }
+    }
+
     Ok(json!({
-        "success": exit_code == Some(0) && !timed_out,
+        "success": succeeded,
         "exitCode": exit_code,
         "stdout": stdout,
         "stderr": stderr,
@@ -325,6 +505,7 @@ struct RunOptions {
     args: Vec<String>,
     working_directory: Option<String>,
     use_cmd_prefix: bool,
+    memory_limit: Option<f64>,
 }
 
 fn run_options_from(first: &Value) -> RunOptions {
@@ -348,11 +529,17 @@ fn run_options_from(first: &Value) -> RunOptions {
                 .get("workingDirectory")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let memory_limit = map.get("memoryLimit").and_then(|v| match v {
+                Value::Number(n) => n.as_f64(),
+                Value::String(s) => s.parse::<f64>().ok(),
+                _ => None,
+            });
             RunOptions {
                 executable,
                 args,
                 working_directory,
                 use_cmd_prefix: false,
+                memory_limit,
             }
         }
         other => {
@@ -363,6 +550,7 @@ fn run_options_from(first: &Value) -> RunOptions {
                     args: Vec::new(),
                     working_directory: None,
                     use_cmd_prefix: true,
+                    memory_limit: None,
                 }
             } else {
                 RunOptions {
@@ -370,6 +558,7 @@ fn run_options_from(first: &Value) -> RunOptions {
                     args: Vec::new(),
                     working_directory: None,
                     use_cmd_prefix: false,
+                    memory_limit: None,
                 }
             }
         }
@@ -386,6 +575,9 @@ fn run_result(
     output_limit_exceeded: bool,
     captured: usize,
     observed: usize,
+    memory_limit_exceeded: bool,
+    memory_limit_bytes: u64,
+    memory_bytes: u64,
 ) -> Value {
     json!({
         "output": output,
@@ -395,6 +587,9 @@ fn run_result(
         "stdout": stdout,
         "stderr": stderr,
         "outputLimitExceeded": output_limit_exceeded,
+        "memoryLimitExceeded": memory_limit_exceeded,
+        "memoryLimitBytes": memory_limit_bytes,
+        "memoryBytes": memory_bytes,
         "outputLimitBytes": OUTPUT_LIMIT_BYTES,
         "capturedOutputBytes": captured,
         "observedOutputBytes": observed
@@ -410,6 +605,19 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
     let time_limit = ipc.number_arg(2);
 
     let options = run_options_from(&first);
+
+    // 第 4 个位置参数为内存限制（MB）；对象参数里的 memoryLimit 优先
+    let memory_limit = options.memory_limit.or(ipc.number_arg(3));
+    let effective_memory_limit_mb = match memory_limit {
+        Some(value) if value.is_finite() && value > 0.0 => value,
+        _ => 0.0,
+    };
+    let memory_limit_bytes = if effective_memory_limit_mb > 0.0 {
+        (effective_memory_limit_mb * 1024.0 * 1024.0) as u64
+    } else {
+        0
+    };
+    let memory_limit_label = format!("{effective_memory_limit_mb}");
 
     let mut cmd = if options.use_cmd_prefix {
         let mut cmd = tokio::process::Command::new("cmd");
@@ -449,6 +657,9 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
                 message,
                 false,
                 0,
+                0,
+                false,
+                memory_limit_bytes,
                 0,
             ));
         }
@@ -499,9 +710,13 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
 
     let mut timeout = false;
     let mut output_limit_exceeded = false;
+    let mut memory_limit_exceeded = false;
+    let mut peak_memory_bytes: u64 = 0;
     let mut exit_code: Option<i32> = None;
 
     let effective_limit = time_limit.filter(|value| value.is_finite() && *value > 0.0);
+    let child_pid = child.id();
+    let mut last_memory_sample = Instant::now() - Duration::from_millis(MEMORY_SAMPLE_INTERVAL_MS);
 
     // 轮询等待：避免在 select 中同时持有 `child.wait()` 的可变借用与 `child.kill()`
     loop {
@@ -532,11 +747,29 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
             }
         }
 
+        // 内存采样（对应 main.js 的 sampleMemory）
+        if memory_limit_bytes > 0
+            && !memory_limit_exceeded
+            && last_memory_sample.elapsed() >= Duration::from_millis(MEMORY_SAMPLE_INTERVAL_MS)
+        {
+            last_memory_sample = Instant::now();
+            if let Some(pid) = child_pid {
+                let bytes = read_process_memory_bytes(pid).await;
+                peak_memory_bytes = peak_memory_bytes.max(bytes);
+                if bytes > memory_limit_bytes {
+                    memory_limit_exceeded = true;
+                    let _ = child.kill().await;
+                    let _ = child.try_wait();
+                    break;
+                }
+            }
+        }
+
         // 极端兜底：进程长时间不退出
         if started.elapsed() > Duration::from_secs(86_400) {
             break;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(WAIT_POLL_MS)).await;
     }
 
     let (stdout_bytes, stdout_observed) = stdout_task.await.unwrap_or_default();
@@ -567,26 +800,53 @@ async fn run_program(ipc: &Ipc<'_>) -> Result<Value, String> {
     };
 
     if output_limit_exceeded {
-        output.push_str("输出超过限制 (256 MB)，程序已被终止。");
+        let notice = "输出超过限制 (256 MB)，程序已被终止。";
+        if output.is_empty() {
+            output = notice.to_string();
+        } else if output.ends_with('\n') {
+            output.push_str(notice);
+        } else {
+            output.push('\n');
+            output.push_str(notice);
+        }
+    }
+    if memory_limit_exceeded {
+        let notice = format!("内存超过限制 ({memory_limit_label} MB)，程序已被终止。");
+        if output.is_empty() {
+            output = notice;
+        } else if output.ends_with('\n') {
+            output.push_str(&notice);
+        } else {
+            output.push('\n');
+            output.push_str(&notice);
+        }
     }
 
-    let elapsed = started.elapsed().as_millis() as i64;
-    let elapsed = if let Some(limit) = effective_limit {
-        elapsed.clamp(0, (limit as i64) + 100)
+    let effective_exit_code = if output_limit_exceeded {
+        exit_code.or(Some(-3))
     } else {
-        elapsed
+        exit_code
     };
+    let measured_time = if effective_limit.is_some() {
+        (started.elapsed().as_millis() as i64).clamp(0, (effective_limit.unwrap() as i64) + 100)
+    } else {
+        (started.elapsed().as_millis() as i64).max(0)
+    };
+    let timed_out = if output_limit_exceeded { false } else { timeout };
 
     Ok(run_result(
         output,
-        elapsed,
-        timeout,
-        exit_code,
+        measured_time,
+        timed_out,
+        effective_exit_code,
         stdout,
         stderr,
         output_limit_exceeded,
         captured,
         observed,
+        memory_limit_exceeded,
+        memory_limit_bytes,
+        peak_memory_bytes,
     ))
 }
 
@@ -694,6 +954,337 @@ async fn run_executable(ipc: &Ipc<'_>) -> Result<Value, String> {
     }
 }
 
+// ------------------------------------------------------------------ 交互题运行
+
+fn interactive_error_result(message: &str) -> Value {
+    json!({
+        "output": message,
+        "time": 0,
+        "timeout": false,
+        "exitCode": -1,
+        "contestantExitCode": -1,
+        "graderExitCode": -1,
+        "stdout": "",
+        "stderr": message,
+        "outputLimitExceeded": false,
+        "memoryLimitExceeded": false,
+        "memoryBytes": 0
+    })
+}
+
+/// 交互题的管道泵：读取一端输出，必要时转发到对端 stdin，并做全局输出上限控制
+fn spawn_interactive_pump<R>(
+    reader: Option<R>,
+    forward: Option<tokio::process::ChildStdin>,
+    captured: Arc<AtomicUsize>,
+    ole: Arc<AtomicBool>,
+) -> tokio::task::JoinHandle<Vec<u8>>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut buffer: Vec<u8> = Vec::new();
+        let Some(mut reader) = reader else {
+            return buffer;
+        };
+        let mut sink = forward;
+        let mut chunk = [0u8; 65536];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let previous = captured.fetch_add(n, Ordering::SeqCst);
+                    if previous + n > OUTPUT_LIMIT_BYTES {
+                        let remain = OUTPUT_LIMIT_BYTES.saturating_sub(previous);
+                        buffer.extend_from_slice(&chunk[..remain]);
+                        ole.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                    buffer.extend_from_slice(&chunk[..n]);
+                    if sink.is_some() {
+                        let failed = match sink.as_mut() {
+                            Some(writer) => writer.write_all(&chunk[..n]).await.is_err(),
+                            None => false,
+                        };
+                        if failed {
+                            sink = None;
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        if let Some(mut writer) = sink {
+            let _ = writer.shutdown().await;
+        }
+        buffer
+    })
+}
+
+async fn join_pump(handle: tokio::task::JoinHandle<Vec<u8>>) -> Vec<u8> {
+    match tokio::time::timeout(Duration::from_secs(3), handle).await {
+        Ok(Ok(buffer)) => buffer,
+        _ => Vec::new(),
+    }
+}
+
+async fn run_interactive(ipc: &Ipc<'_>) -> Result<Value, String> {
+    let options = ipc.object_arg(0);
+    let text_of = |key: &str| {
+        options
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let number_of = |key: &str| {
+        options.get(key).and_then(|v| match v {
+            Value::Number(n) => n.as_f64(),
+            Value::String(s) => s.parse::<f64>().ok(),
+            _ => None,
+        })
+    };
+
+    let contestant_path = text_of("contestantExecutablePath");
+    let grader_path = text_of("graderExecutablePath");
+    let input_file = text_of("inputFilePath");
+    let time_limit = number_of("timeLimit");
+    let memory_limit = number_of("memoryLimit");
+
+    if contestant_path.trim().is_empty()
+        || grader_path.trim().is_empty()
+        || input_file.trim().is_empty()
+        || !Path::new(&input_file).exists()
+    {
+        return Err("交互题运行参数不完整".to_string());
+    }
+
+    let contestant_abs = absolute(&contestant_path);
+    let grader_abs = absolute(&grader_path);
+    let contestant_cwd = options
+        .get("contestantWorkingDirectory")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or_else(|| paths::dirname(&contestant_abs));
+    let grader_cwd = options
+        .get("graderWorkingDirectory")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or_else(|| paths::dirname(&grader_abs));
+
+    let compiler_path = crate::settings::compiler_path();
+
+    let mut contestant_cmd = tokio::process::Command::new(&contestant_abs);
+    contestant_cmd
+        .current_dir(&contestant_cwd)
+        .env("OICPP_INTERACTIVE_INPUT", &input_file)
+        .env("OICPP_CONTESTANT_EXECUTABLE", &contestant_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    with_compiler_path(&mut contestant_cmd, &compiler_path);
+
+    let mut grader_cmd = tokio::process::Command::new(&grader_abs);
+    grader_cmd
+        .arg(&input_file)
+        .current_dir(&grader_cwd)
+        .env("OICPP_INTERACTIVE_INPUT", &input_file)
+        .env("OICPP_CONTESTANT_EXECUTABLE", &contestant_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    with_compiler_path(&mut grader_cmd, &compiler_path);
+
+    let mut contestant = match contestant_cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => return Ok(interactive_error_result(&err.to_string())),
+    };
+    let mut grader = match grader_cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            let _ = contestant.kill().await;
+            return Ok(interactive_error_result(&err.to_string()));
+        }
+    };
+
+    let contestant_stdout = contestant.stdout.take();
+    let contestant_stderr = contestant.stderr.take();
+    let grader_stdout = grader.stdout.take();
+    let grader_stderr = grader.stderr.take();
+    let contestant_stdin = contestant.stdin.take();
+    let grader_stdin = grader.stdin.take();
+
+    let captured = Arc::new(AtomicUsize::new(0));
+    let ole = Arc::new(AtomicBool::new(false));
+
+    // 选手 stdout -> 评测器 stdin；评测器 stdout -> 选手 stdin
+    let t_contestant_out = spawn_interactive_pump(
+        contestant_stdout,
+        grader_stdin,
+        captured.clone(),
+        ole.clone(),
+    );
+    let t_grader_out = spawn_interactive_pump(
+        grader_stdout,
+        contestant_stdin,
+        captured.clone(),
+        ole.clone(),
+    );
+    let t_contestant_err =
+        spawn_interactive_pump(contestant_stderr, None, captured.clone(), ole.clone());
+    let t_grader_err = spawn_interactive_pump(grader_stderr, None, captured.clone(), ole.clone());
+
+    let started = Instant::now();
+    let effective_time_limit = time_limit.filter(|value| value.is_finite() && *value > 0.0);
+    let memory_limit_bytes = match memory_limit {
+        Some(value) if value.is_finite() && value > 0.0 => (value * 1024.0 * 1024.0) as u64,
+        _ => 0,
+    };
+    let memory_limit_label = memory_limit
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| format!("{value}"))
+        .unwrap_or_else(|| "0".to_string());
+
+    let mut timeout = false;
+    let mut memory_limit_exceeded = false;
+    let mut peak_memory_bytes: u64 = 0;
+    let mut contestant_exit: Option<i32> = None;
+    let mut grader_exit: Option<i32> = None;
+    let mut killed = false;
+    let contestant_pid = contestant.id();
+    let mut last_memory_sample =
+        Instant::now() - Duration::from_millis(MEMORY_SAMPLE_INTERVAL_MS);
+
+    loop {
+        if contestant_exit.is_none() {
+            if let Ok(Some(status)) = contestant.try_wait() {
+                contestant_exit = status.code();
+            }
+        }
+        if grader_exit.is_none() {
+            if let Ok(Some(status)) = grader.try_wait() {
+                grader_exit = status.code();
+            }
+        }
+
+        // 评测器异常退出时终止选手进程
+        if let Some(code) = grader_exit {
+            if code != 0
+                && !timeout
+                && !memory_limit_exceeded
+                && !ole.load(Ordering::SeqCst)
+                && contestant_exit.is_none()
+            {
+                let _ = contestant.kill().await;
+            }
+        }
+
+        if contestant_exit.is_some() && grader_exit.is_some() {
+            break;
+        }
+
+        if !killed {
+            let mut should_kill = ole.load(Ordering::SeqCst);
+            if !should_kill {
+                if let Some(limit) = effective_time_limit {
+                    if started.elapsed() >= Duration::from_millis(limit as u64) {
+                        timeout = true;
+                        should_kill = true;
+                    }
+                }
+            }
+            if !should_kill {
+                if let Some(limit) = effective_time_limit {
+                    if started.elapsed() >= Duration::from_millis((limit * 1.1) as u64) {
+                        should_kill = true;
+                    }
+                }
+            }
+            if should_kill {
+                killed = true;
+                let _ = contestant.kill().await;
+                let _ = grader.kill().await;
+            }
+        }
+
+        if memory_limit_bytes > 0
+            && !memory_limit_exceeded
+            && last_memory_sample.elapsed() >= Duration::from_millis(MEMORY_SAMPLE_INTERVAL_MS)
+        {
+            last_memory_sample = Instant::now();
+            if let Some(pid) = contestant_pid {
+                let bytes = read_process_memory_bytes(pid).await;
+                peak_memory_bytes = peak_memory_bytes.max(bytes);
+                if bytes > memory_limit_bytes {
+                    memory_limit_exceeded = true;
+                    let _ = contestant.kill().await;
+                    let _ = grader.kill().await;
+                }
+            }
+        }
+
+        if started.elapsed() > Duration::from_secs(86_400) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(WAIT_POLL_MS)).await;
+    }
+
+    let contestant_out = join_pump(t_contestant_out).await;
+    let grader_out = join_pump(t_grader_out).await;
+    let contestant_err = join_pump(t_contestant_err).await;
+    let grader_err = join_pump(t_grader_err).await;
+
+    let contestant_stdout = decode(&contestant_out);
+    let contestant_stderr = decode(&contestant_err);
+    let grader_stdout = decode(&grader_out);
+    let grader_stderr = decode(&grader_err);
+
+    let mut parts: Vec<String> = Vec::new();
+    if !grader_stdout.is_empty() {
+        parts.push(format!("[grader stdout]\n{grader_stdout}"));
+    }
+    if !contestant_stdout.is_empty() {
+        parts.push(format!("[contestant stdout]\n{contestant_stdout}"));
+    }
+    if !grader_stderr.is_empty() {
+        parts.push(format!("[grader stderr]\n{grader_stderr}"));
+    }
+    if !contestant_stderr.is_empty() {
+        parts.push(format!("[contestant stderr]\n{contestant_stderr}"));
+    }
+    if memory_limit_exceeded {
+        parts.push(format!("内存超过限制 ({memory_limit_label} MB)，程序已被终止。"));
+    }
+
+    let output_limit_exceeded = ole.load(Ordering::SeqCst);
+    let observed = captured.load(Ordering::SeqCst);
+    let stderr_joined = [grader_stderr, contestant_stderr]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    Ok(json!({
+        "output": parts.join("\n"),
+        "time": started.elapsed().as_millis() as i64,
+        "timeout": if output_limit_exceeded || memory_limit_exceeded { false } else { timeout },
+        "exitCode": contestant_exit,
+        "contestantExitCode": contestant_exit,
+        "graderExitCode": grader_exit,
+        "stdout": contestant_stdout,
+        "stderr": stderr_joined,
+        "graderStdout": grader_stdout,
+        "graderStderr": grader_stderr,
+        "outputLimitExceeded": output_limit_exceeded,
+        "outputLimitBytes": OUTPUT_LIMIT_BYTES,
+        "capturedOutputBytes": observed.min(OUTPUT_LIMIT_BYTES),
+        "observedOutputBytes": observed,
+        "memoryLimitExceeded": memory_limit_exceeded,
+        "memoryLimitBytes": memory_limit_bytes,
+        "memoryBytes": peak_memory_bytes
+    }))
+}
+
 // ------------------------------------------------------------------ IPC
 
 pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
@@ -729,6 +1320,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             )
         }
         "run-program" => Some(run_program(ipc).await),
+        "run-interactive" => Some(run_interactive(ipc).await),
         "run-executable" => Some(run_executable(ipc).await),
         // 原实现中该通道调用了未定义的函数（死代码），这里保持空实现
         "compile-code" => Some(Ok(Value::Null)),

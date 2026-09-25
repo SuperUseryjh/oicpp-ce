@@ -318,11 +318,13 @@
         compileFile: makeInvoker('compile-file'),
         runExecutable: makeInvoker('run-executable'),
         runProgram: makeInvoker('run-program'),
+        runInteractive: makeInvoker('run-interactive'),
 
         // ---- 文件系统
         readDirectory: makeInvoker('read-directory'),
         renameFile: makeInvoker('rename-file'),
         deleteFile: makeInvoker('delete-file'),
+        clearDirectoryContents: makeInvoker('clear-directory-contents'),
         writeFile: makeInvoker('write-file'),
         createFile: makeInvoker('create-file'),
         createFolder: makeInvoker('create-folder'),
@@ -379,6 +381,7 @@
         onFileOpened: onRaw('file-opened'),
         onFileSaved: onTransform('file-saved', function () { return [arguments[1], arguments[2]]; }),
         onFolderOpened: onTransform('folder-opened', function () { return [arguments[1]]; }),
+        reportWorkspacePath: function (folderPath) { ipcSend('workspace-path-report', [folderPath]); },
         onFileOpenedFromArgs: onTransform('file-opened-from-args', function () { return [arguments[1]]; }),
         consumeStartupWorkspaceToOpen: makeInvoker('consume-startup-workspace-to-open'),
         onExternalFileChange: function (callback) {
@@ -459,6 +462,16 @@
         // ---- 内置浏览器
         browserResolveUrl: makeInvoker('browser-resolve-url'),
         browserGetPageTitle: makeInvoker('browser-get-page-title'),
+        // Tauri 版内置浏览器：主窗口内嵌多 webview（替代 Electron 的 <webview> 标签）
+        browserViewCreate: makeInvoker('browser-webview-create'),
+        browserViewSetBounds: makeInvoker('browser-webview-set-bounds'),
+        browserViewNavigate: makeInvoker('browser-webview-navigate'),
+        browserViewAction: makeInvoker('browser-webview-action'),
+        browserViewSetVisible: makeInvoker('browser-webview-set-visible'),
+        browserViewState: makeInvoker('browser-webview-state'),
+        browserViewClose: makeInvoker('browser-webview-close'),
+        browserViewList: makeInvoker('browser-webview-list'),
+        onBrowserViewEvent: onTransform('browser-webview-event', function () { return [arguments[1]]; }),
         onBrowserOpenNewTab: function (callback) {
             if (typeof callback !== 'function') return function () { };
             return addListener('browser-open-new-tab', function (event) { callback(arguments[1]); });

@@ -1,6 +1,6 @@
 [package]
 name = "oicpp-ce"
-version = "1.5.0"
+version = "1.5.4"
 description = "OICPP IDE for competitive programming"
 authors = ["mywwzh <mywwzh@163.com>"]
 homepage = "https://oicpp.mywwzh.top/"
@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -49,6 +49,9 @@ sevenz-rust = "0.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 codegen-units = 1

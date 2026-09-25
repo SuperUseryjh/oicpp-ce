@@ -19,6 +19,12 @@ static CLOSE_WAITER: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     Lazy::new(|| Mutex::new(None));
 static CURRENT_LOG: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 static LOG_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
+/// 渲染进程上报的当前工作区（对应 main.js 的 currentExternalWorkspacePath）
+static EXTERNAL_WORKSPACE: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+pub(crate) fn external_workspace() -> Option<String> {
+    EXTERNAL_WORKSPACE.lock().ok().and_then(|guard| guard.clone())
+}
 
 // ------------------------------------------------------------------ 日志
 
@@ -165,14 +171,14 @@ fn system_info() -> Value {
     })
 }
 
-fn build_info(app: &AppHandle) -> Value {
+pub(crate) fn build_info(app: &AppHandle) -> Value {
     let path = paths::resource_dir(app).join("build-info.json");
     if let Ok(text) = std::fs::read_to_string(&path) {
         if let Ok(value) = serde_json::from_str::<Value>(&text) {
             return value;
         }
     }
-    json!({ "version": "1.5.0", "buildTime": "未知", "author": "mywwzh" })
+    json!({ "version": "1.5.4", "buildTime": "未知", "author": "mywwzh" })
 }
 
 fn user_icon_path(app: &AppHandle) -> String {
@@ -253,6 +259,63 @@ fn page_title_host(url: &str) -> String {
             .unwrap_or_default(),
         Err(_) => String::new(),
     }
+}
+
+// ------------------------------------------------------------------ 窗口外观
+
+/// 玻璃（毛玻璃 / Mica）效果：仅在 Windows / macOS 生效，需窗口透明才有完整效果
+fn apply_glass_effect(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    {
+        use tauri::window::{Effect, EffectsBuilder};
+        let _ = window.set_effects(EffectsBuilder::new().effect(Effect::Mica).build());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::window::{Effect, EffectsBuilder};
+        let _ = window.set_effects(EffectsBuilder::new().effect(Effect::HudWindow).build());
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = window;
+    }
+}
+
+/// 窗口整体透明度：Windows 用分层窗口属性实现；其它平台暂不支持
+#[cfg(windows)]
+fn apply_window_opacity(window: &tauri::WebviewWindow, opacity: f64) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE, LWA_ALPHA,
+        WS_EX_LAYERED,
+    };
+
+    let Ok(handle) = window.hwnd() else {
+        return;
+    };
+    let hwnd = handle.0 as isize;
+    let alpha = (opacity.clamp(0.05, 1.0) * 255.0).round() as u8;
+    unsafe {
+        let current = GetWindowLongPtrW(hwnd as _, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd as _, GWL_EXSTYLE, current | (WS_EX_LAYERED as isize));
+        let _ = SetLayeredWindowAttributes(hwnd as _, 0, alpha, LWA_ALPHA);
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_window_opacity(_window: &tauri::WebviewWindow, _opacity: f64) {}
+
+/// 应用当前设置里的窗口透明度与玻璃效果
+pub(crate) fn apply_window_visuals(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if settings::get_bool("glassEffectEnabled", false) {
+        apply_glass_effect(&window);
+    }
+    let opacity = settings::get_value("windowOpacity")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1.0);
+    apply_window_opacity(&window, opacity);
 }
 
 // ------------------------------------------------------------------ IPC
@@ -532,19 +595,27 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
 
         // ---- 更新（Tauri 版暂不内置自动更新）
-        "get-update-download-status" => Some(Ok(json!({
-            "autoChecking": false,
-            "downloading": false,
-            "version": "",
-            "progress": 0,
-            "pendingInstall": false,
-            "pendingVersion": ""
-        }))),
+        "get-update-download-status" => Some(Ok(crate::update::state_payload())),
         "check-updates-manual" => {
-            ipc.emit_one(
-                "app-toast",
-                json!({ "type": "info", "message": "当前已是最新版本" }),
-            );
+            let app = ipc.app.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::update::check_updates(&app, true).await;
+            });
+            Some(Ok(Value::Null))
+        }
+
+        // ---- 窗口外观（透明度 / 玻璃效果）
+        "apply-window-effects" => {
+            apply_window_visuals(ipc.app);
+            Some(Ok(Value::Null))
+        }
+
+        // ---- 工作区上报（渲染进程为唯一事实来源）
+        "workspace-path-report" => {
+            let folder = ipc.opt_string_arg(0).filter(|value| !value.trim().is_empty());
+            if let Ok(mut guard) = EXTERNAL_WORKSPACE.lock() {
+                *guard = folder;
+            }
             Some(Ok(Value::Null))
         }
 

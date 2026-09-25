@@ -772,6 +772,11 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             }
 
             let (device_name, cpu_id) = device_info();
+            let app_version = crate::misc::build_info(ipc.app)
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("1.5.4")
+                .to_string();
             let file_name = paths::basename(&file_path);
             let part = reqwest::multipart::Part::bytes(bytes)
                 .file_name(file_name)
@@ -779,7 +784,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                 .unwrap_or_else(|_| reqwest::multipart::Part::bytes(Vec::new()));
             let mut form = reqwest::multipart::Form::new()
                 .part("file", part)
-                .text("version", "1.5.0")
+                .text("version", app_version)
                 .text("system", format!("{} {}", paths::platform_name(), std::env::consts::OS))
                 .text("device_name", device_name)
                 .text("cpu_id", cpu_id);

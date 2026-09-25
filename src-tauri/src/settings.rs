@@ -480,6 +480,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             if let Err(err) = save() {
                 return ipc.fail(err);
             }
+            crate::misc::apply_window_visuals(ipc.app);
             let snapshot = all();
             ipc.emit_one("settings-applied", snapshot);
             Some(Ok(json!({ "success": true })))
@@ -498,6 +499,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             if has_keybindings {
                 crate::menu::rebuild(ipc.app);
             }
+            crate::misc::apply_window_visuals(ipc.app);
             let snapshot = all();
             ipc.emit("settings-changed", vec![Value::Null, snapshot.clone()]);
             if let Some(language) = language {

@@ -574,6 +574,69 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         // 20. 取目录名
         "path-dirname" => ipc.ok(paths::dirname(&ipc.string_arg(0))),
 
+        // 21. 另存为（send 版：只选路径并通知渲染进程，由渲染进程自行保存）
+        "save-file-as" => {
+            let picked = crate::dlg::pick_save(
+                ipc.app,
+                Some("另存为"),
+                Some("untitled.cpp"),
+                vec![
+                    (
+                        "C++ Files".into(),
+                        vec!["cpp".into(), "cc".into(), "cxx".into(), "c++".into()],
+                    ),
+                    ("C Files".into(), vec!["c".into()]),
+                    (
+                        "Header Files".into(),
+                        vec!["h".into(), "hpp".into(), "hxx".into()],
+                    ),
+                    ("All Files".into(), vec!["*".into()]),
+                ],
+            )
+            .await;
+            if let Some(path) = picked {
+                ipc.emit_one("file-save-as", Value::String(path.to_string_lossy().to_string()));
+            }
+            Some(Ok(Value::Null))
+        }
+
+        // 22. 清空目录内容（保留目录本身）
+        "clear-directory-contents" => {
+            let raw = ipc.string_arg(0);
+            if raw.trim().is_empty() {
+                return Some(Ok(json!({ "success": false, "error": "路径无效" })));
+            }
+            let resolved = std::fs::canonicalize(raw.trim())
+                .unwrap_or_else(|_| PathBuf::from(raw.trim()));
+            if !resolved.is_dir() {
+                return Some(Ok(json!({ "success": false, "error": "指定路径不是目录" })));
+            }
+            // 安全保护：禁止清空驱动器 / 文件系统根目录
+            if resolved.parent().is_none() {
+                return Some(Ok(json!({ "success": false, "error": "不允许清空根目录" })));
+            }
+            let entries = match std::fs::read_dir(&resolved) {
+                Ok(entries) => entries,
+                Err(err) => return Some(Ok(json!({ "success": false, "error": err.to_string() }))),
+            };
+            let mut removed = 0usize;
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let result = if path.is_dir() {
+                    std::fs::remove_dir_all(&path)
+                } else {
+                    std::fs::remove_file(&path)
+                };
+                match result {
+                    Ok(_) => removed += 1,
+                    Err(err) => {
+                        return Some(Ok(json!({ "success": false, "error": err.to_string() })))
+                    }
+                }
+            }
+            Some(Ok(json!({ "success": true, "removed": removed })))
+        }
+
         _ => None,
     }
 }

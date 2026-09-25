@@ -131,6 +131,8 @@ pub async fn dispatch(
     ask!(crate::fsops);
     ask!(crate::fsread);
     ask!(crate::misc);
+    ask!(crate::update);
+    ask!(crate::browser);
     ask!(crate::compile);
     ask!(crate::toolchain);
     ask!(crate::download);
