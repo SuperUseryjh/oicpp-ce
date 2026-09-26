@@ -122,7 +122,20 @@
         if (!action) {
             return;
         }
-        event.preventDefault();
+
+        var tag = trigger.tagName;
+        var isFormControl = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+        if (isFormControl) {
+            // 表单控件只在 change 阶段处理：勾选/输入是默认行为、发生在事件派发之后，
+            // 所以在 click 阶段读到的是旧值；而且绝不能 preventDefault，否则勾选状态不变
+            if (event.type !== 'change') {
+                return;
+            }
+        } else if (tag === 'A') {
+            // 链接需要阻止默认跳转（对应原内联处理器的 `return false`）
+            event.preventDefault();
+        }
+
         try {
             action(trigger);
         } catch (error) {
