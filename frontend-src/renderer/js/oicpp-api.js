@@ -78,10 +78,38 @@
         },
         'folder.open': function () {
             return window.oicppApi.dialog.pickFolder();
+        },
+        // 样例测试面板（原内联 onchange/onclick 迁移过来）
+        'sampleTester.updateTestlib': function (element) {
+            return callSampleTester('updateGlobalSetting', ['useTestlib', element.checked]);
+        },
+        'sampleTester.updateInteractive': function (element) {
+            return callSampleTester('updateGlobalSetting', ['useInteractive', element.checked]);
+        },
+        'sampleTester.updateSpjPath': function (element) {
+            return callSampleTester('updateGlobalSetting', ['spjPath', element.value]);
+        },
+        'sampleTester.clearGraderFile': function () {
+            return callSampleTester('clearGlobalGraderFile', []);
+        },
+        'sampleTester.selectSpjFile': function () {
+            return callSampleTester('selectGlobalSpjFile', []);
+        },
+        'sampleTester.clearSpjFile': function () {
+            return callSampleTester('clearGlobalSpjFile', []);
         }
     };
 
-    document.addEventListener('click', function (event) {
+    /// 调用渲染层既有的 sampleTester 管理器；不可用时给出明确错误而不是 TypeError
+    function callSampleTester(method, args) {
+        var manager = window.sampleTester;
+        if (!manager || typeof manager[method] !== 'function') {
+            throw new Error('sampleTester.' + method + ' 不可用');
+        }
+        return manager[method].apply(manager, args);
+    }
+
+    function dispatchAction(event) {
         var target = event.target;
         if (!target || typeof target.closest !== 'function') {
             return;
@@ -103,5 +131,10 @@
                 window.logError('[oicppApi] 动作执行失败: ' + trigger.getAttribute('data-oicpp-action') + ' -> ' + error);
             }
         }
+    }
+
+    // 静态元素既可能用 click（按钮/链接）也可能用 change（输入框）
+    ['click', 'change'].forEach(function (type) {
+        document.addEventListener(type, dispatchAction);
     });
 })();

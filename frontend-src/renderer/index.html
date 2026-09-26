@@ -289,13 +289,13 @@
                             <div class="global-settings-pair">
                                 <div class="setting-group">
                                     <label class="setting-checkbox">
-                                        <input type="checkbox" id="global-use-testlib" onchange="sampleTester.updateGlobalSetting('useTestlib', this.checked)">
+                                        <input type="checkbox" id="global-use-testlib" data-oicpp-action="sampleTester.updateTestlib">
                                         <span class="setting-label" data-i18n="menu.useTestlib">全局使用 testlib</span>
                                     </label>
                                 </div>
                                 <div class="setting-group">
                                     <label class="setting-checkbox">
-                                        <input type="checkbox" id="global-use-interactive" onchange="sampleTester.updateGlobalSetting('useInteractive', this.checked)">
+                                        <input type="checkbox" id="global-use-interactive" data-oicpp-action="sampleTester.updateInteractive">
                                         <span class="setting-label" data-i18n="tester.interactiveMode">交互题模式</span>
                                     </label>
                                 </div>
@@ -309,7 +309,7 @@
                                 </div>
                                 <div class="spj-file-display" id="grader-file-display" style="display: none;">
                                     <span class="spj-file-name" id="grader-file-name"></span>
-                                    <a href="#" class="spj-clear-link" onclick="sampleTester.clearGlobalGraderFile(); return false;" title="清除 grader.cpp 文件">
+                                    <a href="#" class="spj-clear-link" data-oicpp-action="sampleTester.clearGraderFile" title="清除 grader.cpp 文件">
                                         删除
                                     </a>
                                 </div>
@@ -318,17 +318,17 @@
                             <div class="setting-group" id="global-spj-group">
                                 <div class="spj-header-row">
                                     <span class="setting-label" data-i18n="menu.spj">SPJ</span>
-                                    <a href="#" class="spj-browse-link" onclick="sampleTester.selectGlobalSpjFile(); return false;" data-i18n="menu.browse" data-i18n-title="compare.selectSpjFile" title="Select SPJ file">
+                                    <a href="#" class="spj-browse-link" data-oicpp-action="sampleTester.selectSpjFile" data-i18n="menu.browse" data-i18n-title="compare.selectSpjFile" title="Select SPJ file">
                                         Browse
                                     </a>
                                 </div>
                                 <div class="spj-file-display" id="spj-file-display" style="display: none;">
                                     <span class="spj-file-name" id="spj-file-name"></span>
-                                    <a href="#" class="spj-clear-link" onclick="sampleTester.clearGlobalSpjFile(); return false;" title="清除SPJ文件">
+                                    <a href="#" class="spj-clear-link" data-oicpp-action="sampleTester.clearSpjFile" title="清除SPJ文件">
                                         删除
                                     </a>
                                 </div>
-                                <input type="hidden" id="global-spj-path" onchange="sampleTester.updateGlobalSetting('spjPath', this.value)">
+                                <input type="hidden" id="global-spj-path" data-oicpp-action="sampleTester.updateSpjPath">
                             </div>
                             <div class="setting-group global-bulk-row global-fileio-row">
                                 <span class="setting-label" data-i18n="menu.fileIO">文件IO</span>
