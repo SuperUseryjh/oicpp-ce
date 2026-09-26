@@ -87,6 +87,26 @@ jobs:
         run: npx tauri icon src-tauri/icons/icon.png -o src-tauri/icons
         continue-on-error: true
 
+      # 滚动 pre-release 的资源名每次相同（版本号不变时），先删掉旧资源再上传
+      - name: Clean rolling release assets
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          tag="build-latest-${{ matrix.artifact }}"
+          if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            echo "release $tag 尚不存在，跳过"
+            exit 0
+          fi
+          gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | while read -r name; do
+            [ -z "$name" ] && continue
+            echo "删除旧资源: $name"
+            gh release delete-asset "$tag" "$name" --repo "$repo" --yes
+          done
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

@@ -1,5 +1,5 @@
 if (!self.MonacoEnvironment) {
-    const basePath = '../../node_modules/monaco-editor/min/vs';
+    const basePath = '../../vendor/monaco-editor/min/vs';
     self.MonacoEnvironment = {
         // 语言 worker 的入口文件是 AMD 模块，直接作为 getWorkerUrl 返回会缺少
         // AMD loader 而报 "define is not defined"。workerMain.js 会在 worker 内

@@ -5,7 +5,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PDF Viewer</title>
-  <link rel="stylesheet" href="../../node_modules/pdfjs-dist/web/pdf_viewer.css" />
+  <link rel="stylesheet" href="../../vendor/pdfjs-dist/web/pdf_viewer.css" />
   <style>
     :root {
       color-scheme: dark;
@@ -273,13 +273,13 @@
   </div>
 
   <script type="module">
-    import * as pdfjsLib from "../../node_modules/pdfjs-dist/build/pdf.mjs";
+    import * as pdfjsLib from "../../vendor/pdfjs-dist/build/pdf.mjs";
     import {
       EventBus,
       PDFViewer,
       PDFLinkService,
       PDFFindController
-    } from "../../node_modules/pdfjs-dist/web/pdf_viewer.mjs";
+    } from "../../vendor/pdfjs-dist/web/pdf_viewer.mjs";
 
     const params = new URLSearchParams(window.location.search);
   const fileUrl = params.get("file") || "";
@@ -344,7 +344,7 @@
     const linkService = new PDFLinkService({ eventBus });
     const findController = new PDFFindController({ eventBus, linkService });
 
-    const workerUrl = new URL("../../node_modules/pdfjs-dist/build/pdf.worker.mjs", import.meta.url).href;
+    const workerUrl = new URL("../../vendor/pdfjs-dist/build/pdf.worker.mjs", import.meta.url).href;
     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
     const pdfViewer = new PDFViewer({

@@ -800,6 +800,85 @@
         }
     } catch (_) { }
 
+    // ---------------------------------------------------------------- 内联事件处理器
+    // Tauri 会在 CSP 的 script-src 里注入 hash/nonce，按 CSP 规范这会让 'unsafe-inline'
+    // 失效，于是 HTML 里的内联处理器（onclick="..."）不再执行 —— 表现就是
+    // 「点了完全没反应、也没有任何报错」。侧边栏的「打开文件夹」、所有弹窗的
+    // 确定/取消/× 都是这一类（用 addEventListener 绑定的侧边栏图标则正常）。
+    // 这里把内联属性转成真实监听器，用 new Function 求值（依赖 CSP 的 'unsafe-eval'）。
+    (function convertInlineHandlers() {
+        var INLINE_EVENTS = ['click', 'change', 'input', 'submit', 'keydown'];
+        var SELECTOR = '[onclick],[onchange],[oninput],[onsubmit],[onkeydown]';
+        var converted = 0;
+
+        function makeRunner(code) {
+            var fn = null;
+            try {
+                fn = new Function('event', code);
+            } catch (err) {
+                reportDiagnostic('[内联事件] 无法编译: ' + code.slice(0, 120), 'error');
+            }
+            return function (ev) {
+                if (!fn) return;
+                try {
+                    fn.call(this, ev);
+                } catch (err) {
+                    reportDiagnostic(
+                        '[内联事件] 执行出错: ' + code.slice(0, 120) + ' -> ' + (err && err.message),
+                        'error'
+                    );
+                }
+            };
+        }
+
+        function bind(el) {
+            for (var i = 0; i < INLINE_EVENTS.length; i += 1) {
+                var name = 'on' + INLINE_EVENTS[i];
+                var code = el.getAttribute(name);
+                if (typeof code !== 'string' || !code) continue;
+                el.removeAttribute(name);
+                el.addEventListener(INLINE_EVENTS[i], makeRunner(code));
+                converted += 1;
+                if (converted <= 5) {
+                    reportDiagnostic(
+                        '[内联事件] 已转换 ' + describeNode(el) + ' ' + name + ' => ' + code.slice(0, 80),
+                        'info'
+                    );
+                }
+            }
+        }
+
+        function scan(root) {
+            try {
+                if (!root || root.nodeType !== 1) return;
+                bind(root);
+                if (root.querySelectorAll) {
+                    var found = root.querySelectorAll(SELECTOR);
+                    for (var i = 0; i < found.length; i += 1) bind(found[i]);
+                }
+            } catch (_) { }
+        }
+
+        try {
+            var start = function () {
+                scan(document);
+                // 弹窗内容是运行时 innerHTML 注入的，必须持续观察新增节点
+                new MutationObserver(function (records) {
+                    for (var i = 0; i < records.length; i += 1) {
+                        var added = records[i].addedNodes;
+                        for (var j = 0; j < added.length; j += 1) scan(added[j]);
+                    }
+                }).observe(document.documentElement || document, { subtree: true, childList: true });
+                reportDiagnostic('[内联事件] 初始化完成，共转换 ' + converted + ' 处', 'info');
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', start, { once: true });
+            } else {
+                start();
+            }
+        } catch (_) { }
+    })();
+
     // ---------------------------------------------------------------- 剪贴板 / 外链全局处理（对应 preload.js）
     function showToast(message, type, durationMs) {
         try {

@@ -130,8 +130,8 @@ async function main() {
   // ---------------------------------------------------------------- 3. 路径适配
   log('适配 node_modules 引用路径');
   rewriteIn(path.join(OUT, 'renderer'), [
-    [/\.\.\/\.\.\/node_modules\//g, '../../vendor/'],
-    [/\.\.\/node_modules\//g, '../vendor/'],
+    // node_modules -> vendor 的路径改写已固化到 frontend-src/renderer 源码里（一次性完成），
+    // 这里不再改写：同一件事只有一个地方负责，避免两层改写互相掩盖问题
   ]);
 
   // pdfjs 的 worker / web viewer 在 vendor 下的相对结构保持一致，无需额外改动

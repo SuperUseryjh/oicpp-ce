@@ -22,8 +22,8 @@
     <link rel="stylesheet" href="css/quick-open.css">
     <link rel="stylesheet" href="css/folder-picker.css">
     <link rel="stylesheet" href="css/terminal.css">
-    <link rel="stylesheet" href="../../node_modules/katex/dist/katex.min.css">
-    <link rel="stylesheet" href="../../node_modules/xterm/css/xterm.css">
+    <link rel="stylesheet" href="../../vendor/katex/dist/katex.min.css">
+    <link rel="stylesheet" href="../../vendor/xterm/css/xterm.css">
     <link rel="stylesheet" href="css/markdown.css">
     <link rel="stylesheet" href="css/browser.css">
 </head>
@@ -668,11 +668,11 @@
         // 因此所有 worker 统一返回 workerMain.js。
         window.MonacoEnvironment = {
             getWorkerUrl: function (moduleId, label) {
-                return '../../node_modules/monaco-editor/min/vs/base/worker/workerMain.js';
+                return '../../vendor/monaco-editor/min/vs/base/worker/workerMain.js';
             }
         };
     </script>
-    <script src="../../node_modules/monaco-editor/min/vs/loader.js"></script>
+    <script src="../../vendor/monaco-editor/min/vs/loader.js"></script>
     <script>
         (function() {
             window.__oicppAmdDefine = window.define;
@@ -680,9 +680,9 @@
             window.define = undefined;
         })();
     </script>
-    <script src="../../node_modules/xterm/lib/xterm.js"></script>
-    <script src="../../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
-    <script src="../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
+    <script src="../../vendor/xterm/lib/xterm.js"></script>
+    <script src="../../vendor/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+    <script src="../../vendor/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
     <script>
         (function() {
             if (window.__oicppAmdDefine) {
@@ -696,7 +696,7 @@
     <script>
         require.config({ 
             paths: { 
-                vs: '../../node_modules/monaco-editor/min/vs' 
+                vs: '../../vendor/monaco-editor/min/vs' 
             },
             'vs/nls': {
                 availableLanguages: {
