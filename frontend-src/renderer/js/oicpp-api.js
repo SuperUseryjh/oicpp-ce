@@ -18,7 +18,8 @@
     'use strict';
 
     var CHANNELS = {
-        pickFolder: 'open-folder-dialog'
+        pickFolder: 'open-folder-dialog',
+        openCompilerSettings: 'open-compiler-settings'
     };
 
     function core() {
@@ -57,6 +58,50 @@
             pickFolder: function () {
                 return send(CHANNELS.pickFolder, []);
             }
+        },
+        settings: {
+            /// 打开「编译器设置」窗口（由 Rust 侧创建独立窗口）
+            openCompilerSettings: function () {
+                return send(CHANNELS.openCompilerSettings, []);
+            }
         }
     };
+
+    /**
+     * 静态 HTML 里的按钮用 `data-oicpp-action="<动作名>"` 声明行为，由这里统一分发。
+     * 不用内联 onclick：Tauri 注入的 CSP 会让内联处理器静默失效（点击完全无响应、
+     * 连异常都没有），排查成本很高。
+     */
+    var ACTIONS = {
+        'compiler.openSettings': function () {
+            return window.oicppApi.settings.openCompilerSettings();
+        },
+        'folder.open': function () {
+            return window.oicppApi.dialog.pickFolder();
+        }
+    };
+
+    document.addEventListener('click', function (event) {
+        var target = event.target;
+        if (!target || typeof target.closest !== 'function') {
+            return;
+        }
+        var trigger = target.closest('[data-oicpp-action]');
+        if (!trigger) {
+            return;
+        }
+        var action = ACTIONS[trigger.getAttribute('data-oicpp-action')];
+        if (!action) {
+            return;
+        }
+        event.preventDefault();
+        try {
+            action(trigger);
+        } catch (error) {
+            // 静默失败是这轮排查最耗时的地方，这里显式记录
+            if (window.logError) {
+                window.logError('[oicppApi] 动作执行失败: ' + trigger.getAttribute('data-oicpp-action') + ' -> ' + error);
+            }
+        }
+    });
 })();

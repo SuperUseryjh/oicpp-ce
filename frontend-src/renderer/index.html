@@ -380,7 +380,7 @@
                             <div class="message-icon" data-ui-icon="gear"></div>
                             <p data-i18n="menu.setCompilerFirst">Please configure the compiler first</p>
                             <p class="sub-text" data-i18n="menu.compilerNeeded">The comparison tool needs a compiler. Go to settings to configure it.</p>
-                            <button class="empty-state-button" onclick="window.electronAPI?.openCompilerSettings?.()" data-i18n="compare.openCompilerSettings">
+                            <button class="empty-state-button" type="button" data-oicpp-action="compiler.openSettings" data-i18n="compare.openCompilerSettings">
                                 Open Compiler Settings
                             </button>
                         </div>
