@@ -1,0 +1,49 @@
+name: Cleanup Artifacts
+
+# 一次性维护工具：手动触发，删除历史 artifact 以释放仓库的 Actions 存储配额。
+# 调试期每个平台每次构建都会产出数百 MB 的安装包，容易把配额撑满
+# （症状：upload-artifact 报 "Artifact storage quota has been hit"）。
+# 日常构建的保留期已由 build.yml 的 retention-days 控制，这里只用于清理存量。
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_days:
+        description: 保留最近几天的产物，其余全部删除（0 = 全部删除）
+        required: false
+        default: "0"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删除历史 artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          KEEP_DAYS: ${{ inputs.keep_days }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "-${KEEP_DAYS} days" +%s)
+          echo "保留 ${KEEP_DAYS} 天内的产物，其余删除（截止时间戳 ${cutoff}）"
+          gh api "repos/${REPO}/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | [.id, .created_at, .size_in_bytes] | @tsv' > artifacts.tsv || true
+          total=$(wc -l < artifacts.tsv)
+          echo "共 ${total} 个 artifacts"
+          deleted=0
+          freed=0
+          while IFS=$'\t' read -r id created size; do
+            [ -z "${id:-}" ] && continue
+            created_ts=$(date -u -d "$created" +%s)
+            if [ "$created_ts" -lt "$cutoff" ]; then
+              if gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}"; then
+                deleted=$((deleted + 1))
+                freed=$((freed + size))
+              fi
+            fi
+          done < artifacts.tsv
+          echo "已删除 ${deleted} 个，释放约 $((freed / 1024 / 1024)) MB"
