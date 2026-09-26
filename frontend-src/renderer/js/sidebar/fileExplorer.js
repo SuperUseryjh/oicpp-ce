@@ -347,11 +347,24 @@ class FileExplorer {
                 <div class="empty-state-icon" data-ui-icon="folder"></div>
                 <div class="empty-state-title">没有打开的文件夹</div>
                 <div class="empty-state-subtitle">您还没有打开文件夹</div>
-                <button class="empty-state-button" onclick="window.oicppApp.openFolder()">
+                <button class="empty-state-button" type="button">
                     打开文件夹
                 </button>
             </div>
         `;
+
+        // 不用内联 onclick：Tauri 注入的 CSP 会让内联处理器失效（点击静默无响应），
+        // 这里改为真实监听器，并走本应用的 API 层（见 js/oicpp-api.js）
+        const openFolderButton = fileTree.querySelector('.empty-state-button');
+        if (openFolderButton) {
+            openFolderButton.addEventListener('click', () => {
+                if (window.oicppApi && window.oicppApi.dialog) {
+                    window.oicppApi.dialog.pickFolder();
+                } else if (window.oicppApp && typeof window.oicppApp.openFolder === 'function') {
+                    window.oicppApp.openFolder();
+                }
+            });
+        }
 
         if (window.uiIcons && typeof window.uiIcons.hydrate === 'function') {
             window.uiIcons.hydrate(fileTree);
