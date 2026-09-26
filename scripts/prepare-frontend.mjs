@@ -165,7 +165,7 @@ async function main() {
     "img-src 'self' data: blob: file: http: https: asset: http://asset.localhost",
     "font-src 'self' data:",
     "worker-src 'self' blob: file: tauri: http://tauri.localhost asset: http://asset.localhost",
-    "connect-src 'self' ipc: http://ipc.localhost https://oicpp.mywwzh.top https://auth.mywwzh.top",
+    "connect-src 'self' ipc: http://ipc.localhost https: http: asset: http://asset.localhost",
     "frame-src 'self' https: http: data: blob:",
     "media-src 'self' data: blob: https: http:",
   ].join('; ') + ';';
