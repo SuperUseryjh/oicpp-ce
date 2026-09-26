@@ -83,13 +83,6 @@ pub(crate) fn open_settings_window(app: &AppHandle, label: &str, page: &str, que
         };
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        // 与主窗口同理：原版设置窗口也设了 `webSecurity: false`（main.js:6677），
-        // 而编译器列表正是在这个窗口里由渲染层 fetch 的
-        builder = builder.additional_browser_args("--disable-web-security");
-    }
-
     if let Err(err) = builder.build() {
         eprintln!("创建设置窗口失败: {err}");
     }
@@ -114,11 +107,6 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
         "resizable": true,
         "center": true,
         "dragDropEnabled": false,
-        // 原版 Electron 用 `webSecurity: false` 关掉了同源校验（main.js:2355），渲染层因此能
-        // 直接 fetch 外部域名（编译器列表、下载镜像等）。WebView2 默认强制 CORS，会直接
-        // 报 `Failed to fetch`，这里恢复与原版一致的行为。
-        // 非 Windows 平台会忽略此字段。
-        "additionalBrowserArgs": "--disable-web-security",
         // macOS 保留原生边框（配合 overlay 标题栏样式），Windows / Linux 无边框
         // —— 注意是 cfg! 本身而不是取反，写反会导致 Windows 下原生标题栏重新出现
         "decorations": cfg!(target_os = "macos"),
