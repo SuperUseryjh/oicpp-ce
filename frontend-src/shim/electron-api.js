@@ -42,6 +42,31 @@
         return ASSET_ORIGIN + '/' + encodeURIComponent(filePath);
     }
 
+    /// 去掉 Rust 侧 canonicalize 产生的 `\\?\` 扩展长度前缀
+    function stripExtendedPrefix(value) {
+        if (typeof value !== 'string') {
+            return value;
+        }
+        if (value.indexOf('\\\\?\\') === 0) {
+            return value.slice(4);
+        }
+        return value;
+    }
+
+    /// 判断是否为浏览器无法直接加载的原生路径（盘符路径 / UNC / file://）
+    function isNativePathValue(value) {
+        if (typeof value !== 'string' || !value) {
+            return false;
+        }
+        if (/^file:\/\//i.test(value)) {
+            return true;
+        }
+        if (value.indexOf('\\\\?\\') === 0 || value.indexOf('\\\\') === 0) {
+            return true;
+        }
+        return /^[A-Za-z]:[\\/]/.test(value);
+    }
+
     function rewriteLocalFileUrls(value) {
         if (typeof value !== 'string' || value.indexOf('file://') === -1) {
             return value;
@@ -75,8 +100,23 @@
         var rewritten = 0;
         var observer = new MutationObserver(function (records) {
             for (var i = 0; i < records.length; i += 1) {
-                var target = records[i].target;
+                var record = records[i];
+                var target = record.target;
                 if (!target || typeof target.getAttribute !== 'function') {
+                    continue;
+                }
+                // img / video / audio 的 src 被赋成原生路径（如应用目录下的 oicpp.ico）时，
+                // WebView 无法加载，这里改成 asset 地址
+                if (record.attributeName === 'src') {
+                    var src = target.getAttribute('src');
+                    if (src && isNativePathValue(src)) {
+                        var fixedSrc = convertFileSrc(stripExtendedPrefix(src));
+                        target.setAttribute('src', fixedSrc);
+                        if (rewritten < 10) {
+                            rewritten += 1;
+                            reportDiagnostic('[本地资源] ' + src + ' -> ' + fixedSrc, 'info');
+                        }
+                    }
                     continue;
                 }
                 var inline = target.getAttribute('style');
@@ -100,7 +140,7 @@
                 subtree: true,
                 childList: true,
                 attributes: true,
-                attributeFilter: ['style']
+                attributeFilter: ['style', 'src']
             });
         };
         if (document.documentElement) {
@@ -695,13 +735,26 @@
             var topmost = document.elementFromPoint(ev.clientX, ev.clientY);
             var btn = target.closest('button, [role="button"], [class*="btn"], [class*="button"]') || target;
             var style = window.getComputedStyle(btn);
+            // 弹窗按钮特殊对待：dialogManager 的 confirm/cancel/close 都是
+            // `if (!this.currentDialog) return;`，所以 currentDialog 是否为空
+            // 直接决定「按钮全灭」，这里把它打出来。
+            var dialogState = '';
+            if (target.closest('.dialog-btn, .dialog-close')) {
+                var dm = window.dialogManager;
+                var overlay = document.getElementById('dialog-overlay');
+                dialogState =
+                    ' | dialogManager=' + (dm ? '有' : '无') +
+                    ' currentDialog=' + (dm && dm.currentDialog ? '已设置' : 'null') +
+                    ' overlay.display=' + (overlay ? (overlay.style.display || '(空)') : '(无overlay)');
+            }
             reportDiagnostic(
                 '[点击] 目标=' + describeNode(target) +
                 ' 顶层=' + describeNode(topmost) +
                 ' 按钮=' + describeNode(btn) +
                 ' pointer-events=' + style.pointerEvents +
                 ' disabled=' + (btn.disabled === true) +
-                ' 默认已阻止=' + ev.defaultPrevented,
+                ' 默认已阻止=' + ev.defaultPrevented +
+                dialogState,
                 'info'
             );
         }, true);

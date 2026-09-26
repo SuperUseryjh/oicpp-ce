@@ -107,7 +107,9 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
         "resizable": true,
         "center": true,
         "dragDropEnabled": false,
-        "decorations": !cfg!(target_os = "macos"),
+        // macOS 保留原生边框（配合 overlay 标题栏样式），Windows / Linux 无边框
+        // —— 注意是 cfg! 本身而不是取反，写反会导致 Windows 下原生标题栏重新出现
+        "decorations": cfg!(target_os = "macos"),
     });
     #[cfg(target_os = "macos")]
     {
@@ -129,7 +131,12 @@ fn setup_main_window(app: &mut tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let menu = menu::build(app.handle());
+    // 原生菜单只在 macOS 生效：Windows / Linux 下 set_menu 会在窗口内画一条原生菜单栏，
+    // 而本项目的菜单是渲染层用 .menu-bar 自绘的（无边框窗口需要这样）
+    #[cfg(target_os = "macos")]
     let _ = window.set_menu(menu);
+    #[cfg(not(target_os = "macos"))]
+    let _ = menu;
 
     // 最大化 / 还原状态变化通知渲染进程
     let handle = app.handle().clone();
