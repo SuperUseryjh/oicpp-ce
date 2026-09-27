@@ -211,6 +211,12 @@ async function main() {
     logLevel: 'warning',
   });
 
+  // ---------------------------------------------------------------- 9. API 桥
+  // 必须放在最后：本函数开头会 rmrf(OUT)，所以任何写进 frontend/ 的产物都不能在外面单独生成，
+  // 否则 `tauri build` 的 beforeBuildCommand 一跑（= 本脚本）就把它删了，包里的页面会 404。
+  log('生成 API 桥 oicpp-api-legacy.js');
+  await import('./gen-api-bridge.mjs');
+
   log('完成，输出目录:', OUT);
 }
 

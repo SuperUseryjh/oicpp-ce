@@ -93,12 +93,8 @@ jobs:
       - name: Generate frontend (from frontend-src)
         run: npm run prepare:frontend
 
-      # 从 shim 的方法-通道映射生成同名的 oicppApi 扁平桥（供渲染层从 Electron 模拟层迁移）
-      # 必须在 prepare:frontend 之后：产物写进已准备好的 frontend/ 目录
-      - name: Generate API bridge
-        run: node scripts/gen-api-bridge.mjs
-
-      # 守住迁移成果：渲染层若再引入未覆盖的 electronAPI / oicppApi 调用，这里直接失败
+      # 守住迁移成果：渲染层若再引入未覆盖的 electronAPI / oicppApi 调用，这里直接失败。
+      # API 桥由 prepare:frontend 的最后一步生成（必须在它清空 frontend/ 之后），这里只做校验。
       - name: Check API coverage
         run: node scripts/check-api-coverage.mjs
 

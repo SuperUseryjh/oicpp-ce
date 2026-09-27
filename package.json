@@ -14,8 +14,8 @@
     "prepare:api": "node scripts/gen-api-bridge.mjs",
     "prepare:clangd": "node scripts/download-clangd.mjs",
     "tauri": "tauri",
-    "dev": "npm run prepare:frontend && npm run prepare:api && tauri dev",
-    "build": "npm run prepare:clangd && npm run prepare:frontend && npm run prepare:api && tauri build"
+    "dev": "tauri dev",
+    "build": "npm run prepare:clangd && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
