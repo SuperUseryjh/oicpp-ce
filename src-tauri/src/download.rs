@@ -130,8 +130,28 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         "download-testlib" => Some(download(ipc, true).await),
         "select-compiler" => Some(select_compiler(ipc)),
         "select-testlib" => Some(select_testlib(ipc)),
+        // 渲染层不能直接请求外部接口：原版 Electron 设了 `webSecurity: false` 绕过同源校验，
+        // 而 WebView2 强制 CORS，浏览器侧会直接报 `Failed to fetch`（连请求都发不出去）。
+        // 这里由 Rust 侧代发请求，返回解析后的 JSON。
+        "fetch-json" => Some(fetch_json(&ipc.string_arg(0)).await),
         _ => None,
     }
+}
+
+/// 由 Rust 侧代渲染层发起 GET 请求，成功时返回解析后的 JSON（非 JSON 则原样返回字符串）。
+/// 不这么做的话，渲染层的 fetch 会被 WebView2 的 CORS 拦掉（见 dispatch 中的注释）。
+async fn fetch_json(url: &str) -> Result<Value, String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err(format!("仅支持 http(s) 地址: {url}"));
+    }
+    let response = reqwest::get(url).await.map_err(|err| format!("请求失败: {err}"))?;
+    let status = response.status();
+    let text = response.text().await.map_err(|err| format!("读取响应失败: {err}"))?;
+    if !status.is_success() {
+        let snippet: String = text.chars().take(300).collect();
+        return Err(format!("HTTP {}: {snippet}", status.as_u16()));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
 }
 
 /// 列举目录下所有子目录名；不存在或出错返回空数组

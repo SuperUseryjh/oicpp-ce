@@ -19,7 +19,8 @@
 
     var CHANNELS = {
         pickFolder: 'open-folder-dialog',
-        openCompilerSettings: 'open-compiler-settings'
+        openCompilerSettings: 'open-compiler-settings',
+        fetchJson: 'fetch-json'
     };
 
     function core() {
@@ -63,6 +64,16 @@
             /// 打开「编译器设置」窗口（由 Rust 侧创建独立窗口）
             openCompilerSettings: function () {
                 return send(CHANNELS.openCompilerSettings, []);
+            }
+        },
+        http: {
+            /**
+             * 取外部接口的 JSON。由 Rust 侧代发请求 —— 渲染层直接 fetch 会被 WebView2 的
+             * CORS 拦掉（原版 Electron 靠 `webSecurity: false` 绕过，Tauri 没有等价开关），
+             * 表现为 `Failed to fetch`，且请求根本发不出去（后端无任何痕迹）。
+             */
+            getJson: function (url) {
+                return invoke(CHANNELS.fetchJson, [url]);
             }
         }
     };

@@ -440,13 +440,8 @@ class CompilerSettings {
         compilerList.innerHTML = '<div class="loading">' + (window.i18n ? window.i18n.t('compiler.fetchingList') : 'Fetching compiler list...') + '</div>';
         
         try {
-            const response = await fetch('https://oicpp.mywwzh.top/api/getAvailableCompilerList');
-            
-            if (!response.ok) {
-                throw new Error(`Network error: ${response.status} ${response.statusText}`);
-            }
-            
-            const compilers = await response.json();
+            // 由 Rust 侧代发请求：WebView2 的 CORS 会拦掉渲染层直接发起的 fetch
+            const compilers = await window.oicppApi.http.getJson('https://oicpp.mywwzh.top/api/getAvailableCompilerList');
             
             logInfo('[编译器设置] 服务器返回的编译器数据:', compilers);
             if (compilers && compilers.length > 0) {
@@ -1167,13 +1162,8 @@ class CompilerSettings {
         testlibList.innerHTML = '<div class="loading">正在获取Testlib列表...</div>';
         
         try {
-            const response = await fetch('https://oicpp.mywwzh.top/api/getAvailableTestlibList');
-            
-            if (!response.ok) {
-                throw new Error(`Network error: ${response.status} ${response.statusText}`);
-            }
-            
-            const testlibs = await response.json();
+            // 由 Rust 侧代发请求：WebView2 的 CORS 会拦掉渲染层直接发起的 fetch
+            const testlibs = await window.oicppApi.http.getJson('https://oicpp.mywwzh.top/api/getAvailableTestlibList');
             
             testlibList.innerHTML = '';
             
