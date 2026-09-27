@@ -50,6 +50,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # 仓库里目前没有 Cargo.lock（本地从未构建过 Rust），导致每次运行都重新解析依赖版本，
+      # rust-cache 的键也随之漂移 -> 依赖整体重编。这里把首次生成的 lockfile 存下来，
+      # 让后续运行用同一份依赖图。更彻底的做法是把 Cargo.lock 提交进仓库。
+      # 必须放在 Rust cache 之前：rust-cache 是用 Cargo.lock 的哈希算键的。
+      - name: Cache Cargo.lock
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/Cargo.lock
+          key: cargo-lock-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.toml') }}
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
