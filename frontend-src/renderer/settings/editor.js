@@ -347,11 +347,11 @@ class EditorSettings {
 
     async importClangFormatFromFile() {
         try {
-            if (!window.electronAPI?.showOpenDialog || !window.electronAPI?.readFileContent) {
+            if (!window.oicppApi?.showOpenDialog || !window.oicppApi?.readFileContent) {
                 this.showMessage((window.i18n ? window.i18n.t('settings.importNotSupported') : '当前环境不支持文件导入'), 'error');
                 return;
             }
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('settings.importClangFormat') : '导入 .clang-format',
                 properties: ['openFile'],
                 filters: [
@@ -363,7 +363,7 @@ class EditorSettings {
                 return;
             }
             const filePath = result.filePaths[0];
-            const content = await window.electronAPI.readFileContent(filePath);
+            const content = await window.oicppApi.readFileContent(filePath);
             this.loadClangFormatFromText(String(content || ''));
             this.showMessage((window.i18n ? window.i18n.t('message.importSuccess') : '已导入 .clang-format'), 'success');
         } catch (error) {
@@ -385,7 +385,7 @@ class EditorSettings {
 
     async saveClangFormatToFile() {
         try {
-            if (!window.electronAPI?.showSaveDialog || !window.electronAPI?.writeFile) {
+            if (!window.oicppApi?.showSaveDialog || !window.oicppApi?.writeFile) {
                 this.showMessage((window.i18n ? window.i18n.t('settings.saveNotSupported') : '当前环境不支持文件保存'), 'error');
                 return;
             }
@@ -394,7 +394,7 @@ class EditorSettings {
             const content = (this._clangFormatRawDirty && !this._clangFormatControlsDirty && rawTextArea && String(rawTextArea.value || '').trim())
                 ? String(rawTextArea.value)
                 : this.generateClangFormatText(style);
-            const result = await window.electronAPI.showSaveDialog({
+            const result = await window.oicppApi.showSaveDialog({
                 title: window.i18n ? window.i18n.t('settings.saveClangFormat') : '写入 .clang-format',
                 defaultPath: '.clang-format',
                 filters: [
@@ -405,7 +405,7 @@ class EditorSettings {
             if (!result || result.canceled || !result.filePath) {
                 return;
             }
-            await window.electronAPI.writeFile(result.filePath, content);
+            await window.oicppApi.writeFile(result.filePath, content);
             this.showMessage((window.i18n ? window.i18n.t('message.exportSuccess') : '已写入 .clang-format'), 'success');
         } catch (error) {
             logError('写入 .clang-format 失败:', error);
@@ -1125,11 +1125,11 @@ class EditorSettings {
                 const windowOpacity = 1 - transparency;
                 opacityValue.textContent = Math.round(transparency * 100) + '%';
                 // 实时预览透明度
-                if (window.electronAPI && window.electronAPI.updateSettings) {
+                if (window.oicppApi && window.oicppApi.updateSettings) {
                     // 简单的防抖
                     clearTimeout(this.opacityTimeout);
                     this.opacityTimeout = setTimeout(() => {
-                        window.electronAPI.updateSettings({ windowOpacity });
+                        window.oicppApi.updateSettings({ windowOpacity });
                     }, 100);
                 }
             });
@@ -1146,8 +1146,8 @@ class EditorSettings {
         const bgImageInput = document.getElementById('editor-bg-image');
         if (browseBgBtn && bgImageInput) {
             browseBgBtn.addEventListener('click', async () => {
-                if (window.electronAPI && window.electronAPI.showOpenDialog) {
-                    const result = await window.electronAPI.showOpenDialog({
+                if (window.oicppApi && window.oicppApi.showOpenDialog) {
+                    const result = await window.oicppApi.showOpenDialog({
                         title: '选择背景图片',
                         filters: [
                             { name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp'] },
@@ -1189,8 +1189,8 @@ class EditorSettings {
 
     setupLanguageListener() {
         // Listen for language-changed events from main process
-        if (window.electronAPI && typeof window.electronAPI.onLanguageChanged === 'function') {
-            window.electronAPI.onLanguageChanged((langCode) => {
+        if (window.oicppApi && typeof window.oicppApi.onLanguageChanged === 'function') {
+            window.oicppApi.onLanguageChanged((langCode) => {
                 logInfo('编辑器设置页面收到语言变更:', langCode);
                 this.settings.language = langCode;
                 // Re-translate the page
@@ -1365,9 +1365,9 @@ class EditorSettings {
 
             clearTimeout(this.previewTimeout);
             this.previewTimeout = setTimeout(() => {
-                if (window.electronAPI && window.electronAPI.sendSettingsPreview) {
+                if (window.oicppApi && window.oicppApi.sendSettingsPreview) {
                     logInfo('通过IPC发送预览设置到主进程');
-                    window.electronAPI.sendSettingsPreview(previewSettings);
+                    window.oicppApi.sendSettingsPreview(previewSettings);
                 } else {
                     logWarn('预览API (electronAPI.sendSettingsPreview) 不可用');
                 }
@@ -1382,9 +1382,9 @@ class EditorSettings {
         try {
             if (this._saved) return;
             if (!this._initialLoadedSettings) return;
-            if (window.electronAPI && window.electronAPI.sendSettingsPreview) {
+            if (window.oicppApi && window.oicppApi.sendSettingsPreview) {
                 clearTimeout(this.previewTimeout);
-                window.electronAPI.sendSettingsPreview(this._initialLoadedSettings);
+                window.oicppApi.sendSettingsPreview(this._initialLoadedSettings);
             }
         } catch (error) {
             logWarn('回滚预览设置失败:', error);
@@ -1399,9 +1399,9 @@ class EditorSettings {
         try {
             let allSettings = null;
 
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
                 try {
-                    allSettings = await window.electronAPI.getAllSettings();
+                    allSettings = await window.oicppApi.getAllSettings();
                     logInfo('通过electronAPI加载设置成功:', allSettings);
                 } catch (apiError) {
                     logError('electronAPI加载失败:', apiError);
@@ -1762,16 +1762,16 @@ class EditorSettings {
             logInfo('即将保存的设置:', newSettings);
 
             logInfo('API可用性检查:', {
-                electronAPI: !!window.electronAPI,
-                updateSettings: !!(window.electronAPI && window.electronAPI.updateSettings),
+                electronAPI: !!window.oicppApi,
+                updateSettings: !!(window.oicppApi && window.oicppApi.updateSettings),
                 requireAvailable: typeof require !== 'undefined'
             });
 
             let result = null;
 
-            if (window.electronAPI && window.electronAPI.updateSettings) {
+            if (window.oicppApi && window.oicppApi.updateSettings) {
                 try {
-                    result = await window.electronAPI.updateSettings(newSettings);
+                    result = await window.oicppApi.updateSettings(newSettings);
                     logInfo('通过electronAPI保存设置结果:', result);
                 } catch (apiError) {
                     logError('electronAPI保存失败:', apiError);
@@ -1813,8 +1813,8 @@ class EditorSettings {
                 this.showMessage('保存设置失败：' + errorMsg, 'error');
                 logError('保存设置失败，详细信息:', {
                     result,
-                    electronAPI: !!window.electronAPI,
-                    updateSettings: !!(window.electronAPI && window.electronAPI.updateSettings),
+                    electronAPI: !!window.oicppApi,
+                    updateSettings: !!(window.oicppApi && window.oicppApi.updateSettings),
                     requireAvailable: typeof require !== 'undefined'
                 });
             }
@@ -1827,8 +1827,8 @@ class EditorSettings {
 
     async resetSettings() {
         try {
-            if (window.electronAPI && window.electronAPI.resetSettings) {
-                const result = await window.electronAPI.resetSettings();
+            if (window.oicppApi && window.oicppApi.resetSettings) {
+                const result = await window.oicppApi.resetSettings();
                 if (result.success) {
                     await this.loadSettings();
                     this.renderKeybindingsUI();

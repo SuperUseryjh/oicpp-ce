@@ -77,9 +77,9 @@ class MonacoEditorManager {
             }
         });
 
-        if (window.electronAPI?.onSettingsChanged) {
+        if (window.oicppApi?.onSettingsChanged) {
             try {
-                window.electronAPI.onSettingsChanged((_event, _settingsType, payload) => {
+                window.oicppApi.onSettingsChanged((_event, _settingsType, payload) => {
                     if (payload && Object.prototype.hasOwnProperty.call(payload, 'compilerPath')) {
                         const newCompilerPath = payload.compilerPath || '';
                         this._lspCompilerPath = newCompilerPath;
@@ -513,8 +513,8 @@ class MonacoEditorManager {
             let fallbackFlags = [];
             let compilerPath = '';
             try {
-                if (window.electronAPI?.getAllSettings) {
-                    const settings = await window.electronAPI.getAllSettings();
+                if (window.oicppApi?.getAllSettings) {
+                    const settings = await window.oicppApi.getAllSettings();
                     fallbackFlags = this.tokenizeCompilerArgs(settings?.compilerArgs || '');
                     compilerPath = settings?.compilerPath || '';
                 }
@@ -1324,8 +1324,8 @@ class MonacoEditorManager {
         const fileName = (fileNameHint || model.__oicppVirtualName || 'untitled.cpp').replace(/[\\/]/g, '_');
         let virtualPath = fileName;
         if (workspaceRoot) {
-            if (window.electronAPI?.pathJoin) {
-                virtualPath = await window.electronAPI.pathJoin(workspaceRoot, '.oicpp', 'lsp', fileName);
+            if (window.oicppApi?.pathJoin) {
+                virtualPath = await window.oicppApi.pathJoin(workspaceRoot, '.oicpp', 'lsp', fileName);
             } else {
                 virtualPath = `${workspaceRoot}/.oicpp/lsp/${fileName}`;
             }
@@ -2637,8 +2637,8 @@ class MonacoEditorManager {
 
     async refreshKeybindingsFromSettings() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const allSettings = await window.oicppApi.getAllSettings();
                 this.loadKeybindingsFromSettings(allSettings);
                 return;
             }
@@ -2732,8 +2732,8 @@ class MonacoEditorManager {
 
     async loadUserSnippets() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const all = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const all = await window.oicppApi.getAllSettings();
                 this.userSnippets = Array.isArray(all?.codeSnippets) ? all.codeSnippets : [];
             }
             if (!Array.isArray(this.userSnippets)) this.userSnippets = [];
@@ -2893,8 +2893,8 @@ class MonacoEditorManager {
                 syntaxFontStyles: this.syntaxStyles
             };
             try {
-                if (window.electronAPI && window.electronAPI.getAllSettings) {
-                    const allSettings = await window.electronAPI.getAllSettings();
+                if (window.oicppApi && window.oicppApi.getAllSettings) {
+                    const allSettings = await window.oicppApi.getAllSettings();
                     if (allSettings) {
                         currentTheme = allSettings.theme || 'dark';
                         if (allSettings.fontSize) {
@@ -2907,7 +2907,7 @@ class MonacoEditorManager {
                             if (window.fontDetector) {
                                 fontFamily = window.fontDetector.validateFont(allSettings.font);
                                 if (fontFamily !== allSettings.font) {
-                                    window.electronAPI.updateSettings({ font: fontFamily }).catch(err => {
+                                    window.oicppApi.updateSettings({ font: fontFamily }).catch(err => {
                                         logError('更新字体设置失败:', err);
                                     });
                                 }
@@ -4564,8 +4564,8 @@ class MonacoEditorManager {
         let defaultContent = '';
         if (fileName.endsWith('.cpp') || fileName.endsWith('.cc') || fileName.endsWith('.cxx')) {
             try {
-                if (window.electronAPI && window.electronAPI.getAllSettings) {
-                    const settings = await window.electronAPI.getAllSettings();
+                if (window.oicppApi && window.oicppApi.getAllSettings) {
+                    const settings = await window.oicppApi.getAllSettings();
                     if (settings && settings.cppTemplate) {
                         defaultContent = settings.cppTemplate;
                     } else {
@@ -4628,8 +4628,8 @@ class MonacoEditorManager {
                             lineHeight: this.getLineHeightValue(newFontSize, this.lineHeightSetting)
                         });
                         
-                        if (window.electronAPI && window.electronAPI.updateSettings) {
-                            window.electronAPI.updateSettings({ fontSize: newFontSize }).then(() => {
+                        if (window.oicppApi && window.oicppApi.updateSettings) {
+                            window.oicppApi.updateSettings({ fontSize: newFontSize }).then(() => {
                             }).catch(err => {
                             });
                         } else {
@@ -4676,8 +4676,8 @@ class MonacoEditorManager {
                                 fontSize: newFontSize,
                                 lineHeight: this.getLineHeightValue(newFontSize, this.lineHeightSetting)
                             });
-                            if (window.electronAPI?.updateSettings) {
-                                window.electronAPI.updateSettings({ fontSize: newFontSize }).catch(err => {
+                            if (window.oicppApi?.updateSettings) {
+                                window.oicppApi.updateSettings({ fontSize: newFontSize }).catch(err => {
                                     logError('[字体调整] 更新字体大小设置失败:', err);
                                 });
                             }
@@ -4911,9 +4911,9 @@ class MonacoEditorManager {
     async copyToClipboard(text) {
         let success = false;
         
-        if (!success && window.electronAPI && typeof window.electronAPI.clipboardWriteText === 'function') {
+        if (!success && window.oicppApi && typeof window.oicppApi.clipboardWriteText === 'function') {
             try {
-                const result = await window.electronAPI.clipboardWriteText(text);
+                const result = await window.oicppApi.clipboardWriteText(text);
                 if (result && result.success) {
                     logInfo('使用IPC API复制成功');
                     success = true;
@@ -4973,9 +4973,9 @@ class MonacoEditorManager {
     async readFromClipboard() {
         let text = null;
         
-        if (!text && window.electronAPI && typeof window.electronAPI.clipboardReadText === 'function') {
+        if (!text && window.oicppApi && typeof window.oicppApi.clipboardReadText === 'function') {
             try {
-                const result = await window.electronAPI.clipboardReadText();
+                const result = await window.oicppApi.clipboardReadText();
                 if (result && result.success && result.text) {
                     logInfo('使用IPC API读取剪贴板成功');
                     return result.text;
@@ -5596,8 +5596,8 @@ class MonacoEditorManager {
         if (!targetUrl) return;
 
         try {
-            if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-                await window.electronAPI.openExternal(targetUrl);
+            if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+                await window.oicppApi.openExternal(targetUrl);
             } else if (window.electron && window.electron.shell && typeof window.electron.shell.openExternal === 'function') {
                 window.electron.shell.openExternal(targetUrl);
             } else if (typeof window.open === 'function') {
@@ -6323,8 +6323,8 @@ class MonacoEditorManager {
                 }
             }
 
-            if (window.electronAPI?.readFileContent) {
-                const content = await window.electronAPI.readFileContent(filePath);
+            if (window.oicppApi?.readFileContent) {
+                const content = await window.oicppApi.readFileContent(filePath);
                 if (typeof content === 'string' && content.includes(word)) {
                     const lines = content.split(/\r?\n/);
                     const def = this.findDefinitionInLines(lines, word);
@@ -6633,7 +6633,7 @@ class MonacoEditorManager {
                 }
             }
 
-            const platform = (window.process && typeof window.process.platform === 'string') ? window.process.platform : (await window.electronAPI?.getPlatform?.());
+            const platform = (window.process && typeof window.process.platform === 'string') ? window.process.platform : (await window.oicppApi?.getPlatform?.());
             if (platform === 'linux' || platform === 'darwin') {
                 await addDir('/usr/include');
                 await addDir('/usr/local/include');
@@ -6752,8 +6752,8 @@ class MonacoEditorManager {
             if (!Array.isArray(segments)) return null;
             const filtered = segments.filter(seg => typeof seg === 'string' && seg.length);
             if (!filtered.length) return null;
-            if (window.electronAPI?.pathJoin) {
-                return await window.electronAPI.pathJoin(...filtered);
+            if (window.oicppApi?.pathJoin) {
+                return await window.oicppApi.pathJoin(...filtered);
             }
             return filtered.join('/');
         } catch (_) {
@@ -6763,8 +6763,8 @@ class MonacoEditorManager {
 
     async safeDirname(filePath) {
         try {
-            if (!filePath || typeof filePath !== 'string' || !window.electronAPI?.pathDirname) return null;
-            return await window.electronAPI.pathDirname(filePath);
+            if (!filePath || typeof filePath !== 'string' || !window.oicppApi?.pathDirname) return null;
+            return await window.oicppApi.pathDirname(filePath);
         } catch (_) {
             return null;
         }
@@ -6797,8 +6797,8 @@ class MonacoEditorManager {
 
     async pathExists(filePath) {
         try {
-            if (!filePath || typeof filePath !== 'string' || !window.electronAPI?.checkFileExists) return false;
-            return !!(await window.electronAPI.checkFileExists(filePath));
+            if (!filePath || typeof filePath !== 'string' || !window.oicppApi?.checkFileExists) return false;
+            return !!(await window.oicppApi.checkFileExists(filePath));
         } catch (_) {
             return false;
         }
@@ -6806,9 +6806,9 @@ class MonacoEditorManager {
 
     async readDirectorySafe(dirPath) {
         try {
-            if (!dirPath || typeof dirPath !== 'string' || !window.electronAPI?.readDirectory) return [];
+            if (!dirPath || typeof dirPath !== 'string' || !window.oicppApi?.readDirectory) return [];
             if (!(await this.pathExists(dirPath))) return [];
-            const entries = await window.electronAPI.readDirectory(dirPath);
+            const entries = await window.oicppApi.readDirectory(dirPath);
             return Array.isArray(entries) ? entries : [];
         } catch (_) {
             return [];
@@ -6947,7 +6947,7 @@ class MonacoEditorManager {
 
     async getIncludesFromFile(filePath) {
         try {
-            if (!filePath || typeof filePath !== 'string' || !window.electronAPI?.readFileContent) return [];
+            if (!filePath || typeof filePath !== 'string' || !window.oicppApi?.readFileContent) return [];
             if (!(this._fileIncludeCache instanceof Map)) {
                 this._fileIncludeCache = new Map();
             }
@@ -6956,7 +6956,7 @@ class MonacoEditorManager {
                 return cached.includes;
             }
 
-            const content = await window.electronAPI.readFileContent(filePath);
+            const content = await window.oicppApi.readFileContent(filePath);
             if (typeof content !== 'string' || !content.includes('#include')) {
                 this._fileIncludeCache.set(filePath, { token: this._includeCacheToken, includes: [] });
                 return [];
@@ -6982,17 +6982,17 @@ class MonacoEditorManager {
     async getCompilerSettingsSnapshot() {
         const result = { compilerPath: '', compilerArgs: '' };
         try {
-            if (window.electronAPI?.getAllSettings) {
-                const all = await window.electronAPI.getAllSettings();
+            if (window.oicppApi?.getAllSettings) {
+                const all = await window.oicppApi.getAllSettings();
                 result.compilerPath = all?.compilerPath || '';
                 result.compilerArgs = all?.compilerArgs || '';
             }
         } catch (_) {}
 
         const needRemote = (!result.compilerPath || !result.compilerPath.length) || (!result.compilerArgs || !result.compilerArgs.length);
-        if (needRemote && window.electronAPI?.getSettings) {
+        if (needRemote && window.oicppApi?.getSettings) {
             try {
-                const remote = await window.electronAPI.getSettings();
+                const remote = await window.oicppApi.getSettings();
                 if (remote && typeof remote === 'object') {
                     if (!result.compilerPath && typeof remote.compilerPath === 'string') {
                         result.compilerPath = remote.compilerPath;
@@ -7064,13 +7064,13 @@ class MonacoEditorManager {
             }
 
             const allowWorkspaceScan = options.allowWorkspaceScan !== false;
-            if (allowWorkspaceScan && root && window.electronAPI?.walkDirectory) {
+            if (allowWorkspaceScan && root && window.oicppApi?.walkDirectory) {
                 try {
                     const walkKey = `${root}::${header}`;
                     if (this._includePathCache.has(walkKey)) {
                         return this._includePathCache.get(walkKey);
                     }
-                    const res = await window.electronAPI.walkDirectory(root, {
+                    const res = await window.oicppApi.walkDirectory(root, {
                         includeExts: ['.h', '.hpp', '.hh', '.hxx', '.c', '.cc', '.cpp', '.cxx'],
                         excludeGlobs: ['node_modules', '.git', '.oicpp', '.vscode'],
                         maxFiles: 5000
@@ -7108,13 +7108,13 @@ class MonacoEditorManager {
             const tabId = this.generateTabId(fileName, filePath);
             let targetEditor = this.editors.get(tabId);
             if (!targetEditor) {
-                if (window.tabManager && window.electronAPI?.readFileContent) {
-                    const content = await window.electronAPI.readFileContent(filePath);
+                if (window.tabManager && window.oicppApi?.readFileContent) {
+                    const content = await window.oicppApi.readFileContent(filePath);
                     if (typeof content === 'string') {
                         await window.tabManager.openFile(fileName, content, false, { filePath });
                     }
-                } else if (window.electronAPI?.readFileContent) {
-                    const content = await window.electronAPI.readFileContent(filePath);
+                } else if (window.oicppApi?.readFileContent) {
+                    const content = await window.oicppApi.readFileContent(filePath);
                     if (typeof content === 'string') {
                         await this.createNewEditor(tabId, fileName, content, filePath);
                     }

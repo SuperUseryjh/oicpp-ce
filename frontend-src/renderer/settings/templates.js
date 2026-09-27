@@ -56,8 +56,8 @@ class TemplatesSettings {
 
     async applyCurrentTheme() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const settings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const settings = await window.oicppApi.getAllSettings();
                 if (settings && settings.theme) {
                     this.applyTheme(settings.theme);
                 }
@@ -218,8 +218,8 @@ class TemplatesSettings {
         try {
             logInfo('加载设置中...');
             
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const allSettings = await window.oicppApi.getAllSettings();
                 if (allSettings) {
                     if (allSettings.cppTemplate) {
                         this.settings.cppTemplate = allSettings.cppTemplate;
@@ -289,8 +289,8 @@ class TemplatesSettings {
             logInfo('准备保存的设置:', newSettings);
             
             let result;
-            if (window.electronAPI && window.electronAPI.updateSettings) {
-                result = await window.electronAPI.updateSettings(newSettings);
+            if (window.oicppApi && window.oicppApi.updateSettings) {
+                result = await window.oicppApi.updateSettings(newSettings);
             } else {
                 result = await ipcRenderer.invoke('update-settings', newSettings);
             }
@@ -327,8 +327,8 @@ class TemplatesSettings {
                 const newSettings = { cppTemplate: defaultTemplate, codeSnippets: [] };
                 
                 let result;
-                if (window.electronAPI && window.electronAPI.updateSettings) {
-                    result = await window.electronAPI.updateSettings(newSettings);
+                if (window.oicppApi && window.oicppApi.updateSettings) {
+                    result = await window.oicppApi.updateSettings(newSettings);
                 } else {
                     result = await ipcRenderer.invoke('update-settings', newSettings);
                 }

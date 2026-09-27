@@ -42,8 +42,8 @@ class BrowserManager {
         this._pendingNav = new Map(); // uniqueKey -> url
         this._newTabPage = NEW_TAB_PAGE_HTML;
 
-        if (window.electronAPI?.onBrowserOpenNewTab) {
-            this._removeOpenNewTabListener = window.electronAPI.onBrowserOpenNewTab((request) => {
+        if (window.oicppApi?.onBrowserOpenNewTab) {
+            this._removeOpenNewTabListener = window.oicppApi.onBrowserOpenNewTab((request) => {
                 this._handleOpenNewTabRequest(request);
             });
         }
@@ -353,8 +353,8 @@ class BrowserManager {
         if (!url) return;
         // 通过主进程解析 URL
         try {
-            if (window.electronAPI && typeof window.electronAPI.browserResolveUrl === 'function') {
-                url = await window.electronAPI.browserResolveUrl(url);
+            if (window.oicppApi && typeof window.oicppApi.browserResolveUrl === 'function') {
+                url = await window.oicppApi.browserResolveUrl(url);
             }
         } catch (_) {}
         if (!url) return;

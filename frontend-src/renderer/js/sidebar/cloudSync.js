@@ -36,7 +36,7 @@ class CloudSyncPanel {
             e.stopPropagation();
             const faqUrl = 'https://oicpp.mywwzh.top/faqs.html';
             try {
-                await window.electronAPI?.openExternal?.(faqUrl);
+                await window.oicppApi?.openExternal?.(faqUrl);
             } catch (_) {
                 try { window.open(faqUrl, '_blank'); } catch (_) { }
             }
@@ -229,8 +229,8 @@ class CloudSyncPanel {
 
     async activate() {
         try {
-            if (window.electronAPI?.getIdeLoginStatus) {
-                const status = await window.electronAPI.getIdeLoginStatus();
+            if (window.oicppApi?.getIdeLoginStatus) {
+                const status = await window.oicppApi.getIdeLoginStatus();
                 this._lastLoggedIn = !!status?.loggedIn;
             }
         } catch (_) { }
@@ -618,12 +618,12 @@ class CloudSyncPanel {
             this.showMessage(window.i18n ? window.i18n.t('cloud.loginRequired') : '请先登录账户', 'warning');
             return;
         }
-        if (!window.electronAPI?.showOpenDialog) {
+        if (!window.oicppApi?.showOpenDialog) {
             this.showMessage(window.i18n ? window.i18n.t('cloud.uploadUnavailable') : '上传功能不可用', 'error');
             return;
         }
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('dialog.selectUploadFile') : '选择要上传的文件',
                 properties: ['openFile'],
                 filters: [
@@ -635,19 +635,19 @@ class CloudSyncPanel {
             });
             const filePath = result?.filePaths?.[0];
             if (!filePath) return;
-            const info = await window.electronAPI.getPathInfo(filePath);
+            const info = await window.oicppApi.getPathInfo(filePath);
             const ext = (info?.extname || '').toLowerCase();
             if (!this.allowedExtensions.has(ext)) {
                 this.showMessage('仅支持 .ans .in .out .cpp .py .txt .md .h .hpp', 'error');
                 return;
             }
-            const buffer = await window.electronAPI.readFileBuffer(filePath);
+            const buffer = await window.oicppApi.readFileBuffer(filePath);
             const byteLength = buffer?.byteLength ?? buffer?.length ?? 0;
             if (byteLength > this.maxFileSize) {
                 this.showMessage(window.i18n ? window.i18n.t('cloud.fileSizeExceeded') : '文件大小超过 50KB，无法上传', 'error');
                 return;
             }
-            const content = await window.electronAPI.readFileContent(filePath);
+            const content = await window.oicppApi.readFileContent(filePath);
             if (!this.checkRemainingCapacity()) return;
             const targetDir = this.getActionTargetFolder();
             const fileName = info?.basename || filePath.split(/[\\/]/).pop();
@@ -670,19 +670,19 @@ class CloudSyncPanel {
             this.showMessage('请先登录账户', 'warning');
             return;
         }
-        if (!window.electronAPI?.showOpenDialog || !window.electronAPI?.walkDirectory) {
+        if (!window.oicppApi?.showOpenDialog || !window.oicppApi?.walkDirectory) {
             this.showMessage(window.i18n ? window.i18n.t('cloud.uploadUnavailable') : '上传功能不可用', 'error');
             return;
         }
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('dialog.selectUploadFolder') : '选择要上传的文件夹',
                 properties: ['openDirectory']
             });
             const folderPath = result?.filePaths?.[0];
             if (!folderPath) return;
 
-            const info = await window.electronAPI.getPathInfo(folderPath);
+            const info = await window.oicppApi.getPathInfo(folderPath);
             const folderName = info?.basename || folderPath.split(/[\\/]/).pop() || 'folder';
             const targetDir = this.getActionTargetFolder();
             const rootConflict = await this.resolveUploadConflict(targetDir, folderName, 'folder');
@@ -691,7 +691,7 @@ class CloudSyncPanel {
             }
             const cloudRoot = this.joinPath(targetDir, folderName);
 
-            const walkResult = await window.electronAPI.walkDirectory(folderPath, {
+            const walkResult = await window.oicppApi.walkDirectory(folderPath, {
                 includeExts: Array.from(this.allowedExtensions)
             });
             if (!walkResult?.success) {
@@ -746,7 +746,7 @@ class CloudSyncPanel {
             let processed = 0;
             this.showUploadProgress(0, entries.length, `上传中: 0/${entries.length}`);
             for (const entry of entries) {
-                const content = await window.electronAPI.readFileContent(entry.path);
+                const content = await window.oicppApi.readFileContent(entry.path);
                 const bytes = new TextEncoder().encode(content || '').length;
                 if (bytes > this.maxFileSize) {
                     skippedSize += 1;
@@ -794,20 +794,20 @@ class CloudSyncPanel {
     }
 
     async downloadFile(file) {
-        if (!window.electronAPI?.showSaveDialog) {
+        if (!window.oicppApi?.showSaveDialog) {
             this.showMessage('下载功能不可用', 'error');
             return;
         }
         try {
             const data = await this.request('GET', '/cloudSync/download', { path: file.path });
             const content = typeof data?.content === 'string' ? data.content : '';
-            const result = await window.electronAPI.showSaveDialog({
+            const result = await window.oicppApi.showSaveDialog({
                 title: '保存云端文件',
                 defaultPath: file.name
             });
             const targetPath = result?.filePath;
             if (!targetPath) return;
-            const writeResult = await window.electronAPI.writeFile(targetPath, content);
+            const writeResult = await window.oicppApi.writeFile(targetPath, content);
             if (writeResult?.success === false) {
                 throw new Error(writeResult?.error || '写入失败');
             }
@@ -1213,7 +1213,7 @@ class CloudSyncPanel {
     }
 
     async request(method, path, params) {
-        if (!window.electronAPI?.cloudSyncRequest) {
+        if (!window.oicppApi?.cloudSyncRequest) {
             throw new Error('云同步接口不可用');
         }
         const payload = {
@@ -1222,10 +1222,10 @@ class CloudSyncPanel {
             query: method === 'GET' ? params : undefined,
             body: method !== 'GET' ? params : undefined
         };
-        const response = await window.electronAPI.cloudSyncRequest(payload);
+        const response = await window.oicppApi.cloudSyncRequest(payload);
         if (!response?.ok) {
             if (response?.status === 401) {
-                try { await window.electronAPI.logoutIdeAccount?.(); } catch (_) { }
+                try { await window.oicppApi.logoutIdeAccount?.(); } catch (_) { }
                 this.setLoggedInState(false);
                 throw new Error('登录已过期，请重新登录');
             }

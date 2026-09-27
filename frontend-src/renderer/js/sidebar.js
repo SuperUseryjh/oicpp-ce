@@ -25,8 +25,8 @@ class SidebarManager {
 
     async bootstrapCloudVisibility() {
         try {
-            if (!window.electronAPI?.getIdeLoginStatus) return;
-            const status = await window.electronAPI.getIdeLoginStatus();
+            if (!window.oicppApi?.getIdeLoginStatus) return;
+            const status = await window.oicppApi.getIdeLoginStatus();
             logInfo('[CloudSpace] 启动时登录状态:', {
                 loggedIn: !!status?.loggedIn,
                 user: status?.user?.username || ''

@@ -11,10 +11,10 @@ class LspClientBridge {
     }
 
     _bindNotifications() {
-        if (!window.electronAPI || typeof window.electronAPI.onLspNotification !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.onLspNotification !== 'function') {
             return;
         }
-        window.electronAPI.onLspNotification((payload) => {
+        window.oicppApi.onLspNotification((payload) => {
             if (!payload || typeof payload.method !== 'string') {
                 return;
             }
@@ -51,7 +51,7 @@ class LspClientBridge {
     }
 
     async _restartInternal(options = {}) {
-        const api = window.electronAPI;
+        const api = window.oicppApi;
         if (!api) {
             throw new Error('LSP API unavailable');
         }
@@ -87,7 +87,7 @@ class LspClientBridge {
     }
 
     async _startInternal(options = {}) {
-        const api = window.electronAPI;
+        const api = window.oicppApi;
         if (!api || typeof api.lspStart !== 'function') {
             logError('[LSP] LSP API 不可用，无法启动');
             throw new Error('LSP API unavailable');
@@ -137,7 +137,7 @@ class LspClientBridge {
         return await this._finishStartup(startResult, options, api, effectiveFallbackFlags);
     }
 
-    async _finishStartup(startResult, options = {}, api = window.electronAPI, effectiveFallbackFlags = null) {
+    async _finishStartup(startResult, options = {}, api = window.oicppApi, effectiveFallbackFlags = null) {
         const rootUri = options.rootUri || '';
         const workspaceFolders = rootUri
             ? [{ uri: rootUri, name: options.workspaceName || 'workspace' }]
@@ -231,7 +231,7 @@ class LspClientBridge {
     }
 
     async request(method, params) {
-        const api = window.electronAPI;
+        const api = window.oicppApi;
         if (!api || typeof api.lspRequest !== 'function') {
             throw new Error('LSP request API unavailable');
         }
@@ -239,7 +239,7 @@ class LspClientBridge {
     }
 
     async notify(method, params) {
-        const api = window.electronAPI;
+        const api = window.oicppApi;
         if (!api || typeof api.lspNotify !== 'function') {
             throw new Error('LSP notify API unavailable');
         }

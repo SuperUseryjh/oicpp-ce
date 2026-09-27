@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function setUserIconPath() {
     try {
-        const userIconPath = await window.electronAPI.getUserIconPath();
+        const userIconPath = await window.oicppApi.getUserIconPath();
         const appIcon = document.getElementById('app-icon');
         if (appIcon) {
             appIcon.src = userIconPath;
@@ -79,8 +79,8 @@ async function initializeApp() {
         
         logInfo('应用初始化完成！');
         try {
-            if (window.electronAPI && window.electronAPI.onRequestSaveAll) {
-                window.electronAPI.onRequestSaveAll(async () => {
+            if (window.oicppApi && window.oicppApi.onRequestSaveAll) {
+                window.oicppApi.onRequestSaveAll(async () => {
                     try {
                         if (window.tabManager && typeof window.tabManager.saveAllFiles === 'function') {
                             await window.tabManager.saveAllFiles();
@@ -88,7 +88,7 @@ async function initializeApp() {
                             window.oicppApp.saveCurrentFile();
                         }
                     } finally {
-                        window.electronAPI.notifySaveAllComplete();
+                        window.oicppApi.notifySaveAllComplete();
                     }
                 });
             }

@@ -377,8 +377,8 @@ class FileExplorer {
         if (existing) return existing;
 
         let request;
-        if (window.electronAPI?.readDirectory) {
-            request = Promise.resolve().then(() => window.electronAPI.readDirectory(dirPath));
+        if (window.oicppApi?.readDirectory) {
+            request = Promise.resolve().then(() => window.oicppApi.readDirectory(dirPath));
         } else if (window.electronIPC) {
             request = new Promise((resolve, reject) => {
                 let settled = false;
@@ -459,8 +459,8 @@ class FileExplorer {
 
         // Report the workspace to the main process so external file opens don't
         // forcibly switch the workspace when one is already open.
-        if (window.electronAPI && typeof window.electronAPI.reportWorkspacePath === 'function') {
-            window.electronAPI.reportWorkspacePath(path);
+        if (window.oicppApi && typeof window.oicppApi.reportWorkspacePath === 'function') {
+            window.oicppApi.reportWorkspacePath(path);
         }
     }
 
@@ -479,8 +479,8 @@ class FileExplorer {
         }
 
         // Notify the main process that no workspace is currently open.
-        if (window.electronAPI && typeof window.electronAPI.reportWorkspacePath === 'function') {
-            window.electronAPI.reportWorkspacePath('');
+        if (window.oicppApi && typeof window.oicppApi.reportWorkspacePath === 'function') {
+            window.oicppApi.reportWorkspacePath('');
         }
     }
 
@@ -1053,16 +1053,16 @@ class FileExplorer {
             const isFolder = target.type === 'folder';
             const path = target.path;
             if (isFolder) {
-                if (window.electronAPI?.openPath) {
-                    window.electronAPI.openPath(path);
+                if (window.oicppApi?.openPath) {
+                    window.oicppApi.openPath(path);
                 } else if (window.electron?.shell?.openPath) {
                     window.electron.shell.openPath(path);
                 } else if (window.electron?.shell?.showItemInFolder) {
                     window.electron.shell.showItemInFolder(path);
                 }
             } else {
-                if (window.electronAPI?.openPath) {
-                    window.electronAPI.openPath(path, { reveal: true });
+                if (window.oicppApi?.openPath) {
+                    window.oicppApi.openPath(path, { reveal: true });
                 } else if (window.electron?.shell?.showItemInFolder) {
                     window.electron.shell.showItemInFolder(path);
                 } else if (window.electron?.shell?.openPath) {
@@ -1081,8 +1081,8 @@ class FileExplorer {
                 logWarn('openWorkspaceInExplorer: 当前无工作区路径');
                 return;
             }
-            if (window.electronAPI?.openPath) {
-                window.electronAPI.openPath(root);
+            if (window.oicppApi?.openPath) {
+                window.oicppApi.openPath(root);
             } else if (window.electron?.shell?.openPath) {
                 window.electron.shell.openPath(root);
             } else if (window.electron?.shell?.showItemInFolder) {
@@ -1546,8 +1546,8 @@ class FileExplorer {
                     return;
                 }
 
-                if (window.electronAPI && window.electronAPI.readFileContent) {
-                    const content = await window.electronAPI.readFileContent(file.path);
+                if (window.oicppApi && window.oicppApi.readFileContent) {
+                    const content = await window.oicppApi.readFileContent(file.path);
                     if (window.tabManager) {
                         window.tabManager.openFile(file.name, content, false, file.path);
                     }
@@ -1668,8 +1668,8 @@ class FileExplorer {
 
                 if (['.cpp', '.cc', '.cxx'].includes(ext)) {
                     try {
-                        if (window.electronAPI && window.electronAPI.getAllSettings) {
-                            const settings = await window.electronAPI.getAllSettings();
+                        if (window.oicppApi && window.oicppApi.getAllSettings) {
+                            const settings = await window.oicppApi.getAllSettings();
                             if (settings && settings.cppTemplate) {
                                 defaultContent = settings.cppTemplate;
                             } else {
@@ -1800,8 +1800,8 @@ class FileExplorer {
                 try {
                     const ext = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
                     if (['.cpp', '.cc', '.cxx', '.c', '.hpp', '.h'].includes(ext)) {
-                        if (window.electronAPI && window.electronAPI.getAllSettings) {
-                            const settings = await window.electronAPI.getAllSettings();
+                        if (window.oicppApi && window.oicppApi.getAllSettings) {
+                            const settings = await window.oicppApi.getAllSettings();
                             if (settings && settings.cppTemplate) {
                                 defaultContent = settings.cppTemplate;
                             }
@@ -1890,8 +1890,8 @@ class FileExplorer {
 
     async checkFileExists(filePath) {
         try {
-            if (window.electronAPI && window.electronAPI.checkFileExists) {
-                return await window.electronAPI.checkFileExists(filePath);
+            if (window.oicppApi && window.oicppApi.checkFileExists) {
+                return await window.oicppApi.checkFileExists(filePath);
             }
             return this.findFileByPath(filePath) !== null;
         } catch (error) {
@@ -2044,8 +2044,8 @@ class FileExplorer {
         if (!this.hasWorkspace) return;
 
         let targetPath = '';
-        if (window.electronAPI && typeof window.electronAPI.showOpenDialog === 'function') {
-            const result = await window.electronAPI.showOpenDialog({
+        if (window.oicppApi && typeof window.oicppApi.showOpenDialog === 'function') {
+            const result = await window.oicppApi.showOpenDialog({
                 title: '选择要清空的目录',
                 properties: ['openDirectory']
             });
@@ -2067,8 +2067,8 @@ class FileExplorer {
         if (!confirmed) return;
 
         try {
-            if (window.electronAPI && typeof window.electronAPI.clearDirectoryContents === 'function') {
-                const result = await window.electronAPI.clearDirectoryContents(targetPath);
+            if (window.oicppApi && typeof window.oicppApi.clearDirectoryContents === 'function') {
+                const result = await window.oicppApi.clearDirectoryContents(targetPath);
                 if (!result || !result.success) {
                     this.showError(`清空目录失败: ${result?.error || '未知错误'}`);
                     return;

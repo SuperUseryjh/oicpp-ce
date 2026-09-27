@@ -285,8 +285,8 @@ class TabManager {
                     continue;
                 }
 
-                if (filePath && window.electronAPI?.readFileContent) {
-                    const content = await window.electronAPI.readFileContent(filePath);
+                if (filePath && window.oicppApi?.readFileContent) {
+                    const content = await window.oicppApi.readFileContent(filePath);
                     if (typeof content === 'string') {
                         await this.openFile(entry.fileName, content, false, {
                             filePath,
@@ -1531,9 +1531,9 @@ class TabManager {
         if (this._fileWatchListenerBound) {
             return;
         }
-        if (window.electronAPI?.onExternalFileChange) {
+        if (window.oicppApi?.onExternalFileChange) {
             try {
-                const unsubscribe = window.electronAPI.onExternalFileChange((payload) => {
+                const unsubscribe = window.oicppApi.onExternalFileChange((payload) => {
                     this.handleExternalFileChange(payload);
                 });
                 if (typeof unsubscribe === 'function') {
@@ -1582,7 +1582,7 @@ class TabManager {
                 }
                 return typeof p === 'string' && /^cloud:/i.test(p);
             };
-            if (!filePath || !tabId || !window.electronAPI?.watchFile) {
+            if (!filePath || !tabId || !window.oicppApi?.watchFile) {
                 return;
             }
             if (isCloudPath(filePath)) {
@@ -1598,7 +1598,7 @@ class TabManager {
                 entry = { path: filePath, tabs: new Set(), lastChangeType: null };
                 this._watchedFiles.set(key, entry);
                 try {
-                    const result = await window.electronAPI.watchFile(filePath);
+                    const result = await window.oicppApi.watchFile(filePath);
                     if (result && result.success === false) {
                         this._watchedFiles.delete(key);
                         logWarn('TabManager: 主进程拒绝监听文件', { filePath, error: result.error });
@@ -1639,9 +1639,9 @@ class TabManager {
             entry.tabs.delete(tabId);
             if (entry.tabs.size === 0) {
                 this._watchedFiles.delete(key);
-                if (window.electronAPI?.unwatchFile) {
+                if (window.oicppApi?.unwatchFile) {
                     try {
-                        await window.electronAPI.unwatchFile(entry.path);
+                        await window.oicppApi.unwatchFile(entry.path);
                     } catch (error) {
                         logWarn('TabManager: 取消文件监听失败:', error);
                     }
@@ -1658,10 +1658,10 @@ class TabManager {
         }
         const entries = Array.from(this._watchedFiles.values());
         this._watchedFiles.clear();
-        if (window.electronAPI?.unwatchFile) {
+        if (window.oicppApi?.unwatchFile) {
             entries.forEach((entry) => {
                 if (!entry?.path) return;
-                window.electronAPI.unwatchFile(entry.path).catch(() => { });
+                window.oicppApi.unwatchFile(entry.path).catch(() => { });
             });
         }
     }
@@ -1691,8 +1691,8 @@ class TabManager {
                         oldEntry.tabs.delete(tabData.tabId);
                         if (oldEntry.tabs.size === 0) {
                             this._watchedFiles.delete(oldKey);
-                            if (window.electronAPI?.unwatchFile) {
-                                window.electronAPI.unwatchFile(oldEntry.path).catch(() => { });
+                            if (window.oicppApi?.unwatchFile) {
+                                window.oicppApi.unwatchFile(oldEntry.path).catch(() => { });
                             }
                         }
                     }
@@ -1733,8 +1733,8 @@ class TabManager {
             if (affectedTabs.length === 0) {
                 if (entry.tabs.size === 0) {
                     this._watchedFiles.delete(key);
-                    if (window.electronAPI?.unwatchFile) {
-                        window.electronAPI.unwatchFile(entry.path).catch(() => { });
+                    if (window.oicppApi?.unwatchFile) {
+                        window.oicppApi.unwatchFile(entry.path).catch(() => { });
                     }
                 }
                 return;
@@ -1895,10 +1895,10 @@ class TabManager {
             return false;
         }
         try {
-            if (!window.electronAPI?.readFileContent) {
+            if (!window.oicppApi?.readFileContent) {
                 throw new Error('读文件接口不可用');
             }
-            const content = await window.electronAPI.readFileContent(tabData.filePath);
+            const content = await window.oicppApi.readFileContent(tabData.filePath);
             const editorManager = this.monacoEditorManager || window.monacoEditorManager || window.editorManager;
             let editor = null;
             if (editorManager?.editors instanceof Map && tabData.tabId) {
@@ -1992,16 +1992,16 @@ class TabManager {
                             const content = ed?.getValue?.();
                             const filePath = ed?.getFilePath ? ed.getFilePath() : (active?.filePath || null);
                             if (content != null) {
-                                if (filePath && window.electronAPI?.saveFile) {
-                                    window.electronAPI.saveFile(filePath, content)
+                                if (filePath && window.oicppApi?.saveFile) {
+                                    window.oicppApi.saveFile(filePath, content)
                                         .then(() => {
                                             const uniq = (filePath || '').replace(/\\/g, '/');
                                             if (uniq && this.markTabAsSavedByUniqueKey) this.markTabAsSavedByUniqueKey(uniq);
                                             else if (active?.fileName) this.markTabAsSaved(active.fileName);
                                         })
                                         .catch((e) => { logError('关闭前保存失败:', e); });
-                                } else if (window.electronAPI?.saveAsFile) {
-                                    window.electronAPI.saveAsFile(content)
+                                } else if (window.oicppApi?.saveAsFile) {
+                                    window.oicppApi.saveAsFile(content)
                                         .then((newPath) => {
                                             if (newPath) {
                                                 const uniq = newPath.replace(/\\/g, '/');
@@ -2135,8 +2135,8 @@ class TabManager {
                 }
                 return typeof p === 'string' && /^cloud:/i.test(p);
             };
-            if (currentTab.filePath && window.electronAPI?.saveFile && !isCloudPath(currentTab.filePath)) {
-                window.electronAPI.saveFile(currentTab.filePath, content)
+            if (currentTab.filePath && window.oicppApi?.saveFile && !isCloudPath(currentTab.filePath)) {
+                window.oicppApi.saveFile(currentTab.filePath, content)
                     .then(() => { logInfo('文件自动保存成功:', currentTab.filePath); })
                     .catch((e) => { logError('自动保存失败:', e); });
             }
@@ -2302,8 +2302,8 @@ class TabManager {
                     };
 
                     if (tabData.isTempFile) {
-                        if (!window.electronAPI?.saveAsFile) return;
-                        const savedPath = await window.electronAPI.saveAsFile(content);
+                        if (!window.oicppApi?.saveAsFile) return;
+                        const savedPath = await window.oicppApi.saveAsFile(content);
                         if (!savedPath) return;
                     } else if (path && typeof content === 'string') {
                         if (isCloudPath(path)) {
@@ -2311,8 +2311,8 @@ class TabManager {
                                 const ok = await window.oicppApp.saveCloudFileToServer(path, content);
                                 if (!ok) return;
                             }
-                        } else if (window.electronAPI?.saveFile) {
-                            await window.electronAPI.saveFile(path, content);
+                        } else if (window.oicppApi?.saveFile) {
+                            await window.oicppApi.saveFile(path, content);
                         }
                     }
                 } catch (e) {
@@ -2387,8 +2387,8 @@ class TabManager {
                     }
                     return typeof p === 'string' && /^cloud:/i.test(p);
                 };
-                if (path && typeof content === 'string' && window.electronAPI?.saveFile && !isCloudPath(path)) {
-                        window.electronAPI.saveFile(path, content)
+                if (path && typeof content === 'string' && window.oicppApi?.saveFile && !isCloudPath(path)) {
+                        window.oicppApi.saveFile(path, content)
                             .then(() => {
                                 if (this.markTabAsSavedByUniqueKey) {
                                     this.markTabAsSavedByUniqueKey(path.replace(/\\/g, '/'));
@@ -2434,8 +2434,8 @@ class TabManager {
             window.monacoEditorManager.cleanupEditor(tabId);
         }
 
-        if (tabData.isTempFile && tabData.filePath && window.electronAPI?.deleteTempFile) {
-            window.electronAPI.deleteTempFile(tabData.filePath).catch((err) => logWarn('删除临时文件失败:', err));
+        if (tabData.isTempFile && tabData.filePath && window.oicppApi?.deleteTempFile) {
+            window.oicppApi.deleteTempFile(tabData.filePath).catch((err) => logWarn('删除临时文件失败:', err));
         }
 
         if (tabData.element && tabData.element.parentNode) {
@@ -3314,13 +3314,13 @@ class TabManager {
             return;
         }
 
-        if (!window.electronAPI?.readFileBuffer) {
+        if (!window.oicppApi?.readFileBuffer) {
             postResponse({ error: '当前环境不支持读取二进制文件' });
             return;
         }
 
         try {
-            const base64 = await window.electronAPI.readFileBuffer(filePath);
+            const base64 = await window.oicppApi.readFileBuffer(filePath);
             if (!base64) {
                 postResponse({ error: '读取 PDF 文件失败：无数据' });
                 return;
@@ -3985,9 +3985,9 @@ class TabManager {
             }
 
             const readContent = async (file) => {
-                if (window.electronAPI?.readFileContent && file?.path) {
+                if (window.oicppApi?.readFileContent && file?.path) {
                     try {
-                        return await window.electronAPI.readFileContent(file.path);
+                        return await window.oicppApi.readFileContent(file.path);
                     } catch (error) {
                         logWarn('读取文件内容失败:', error);
                     }
@@ -4266,10 +4266,10 @@ class TabManager {
     openInSystemExplorer(filePath) {
         try {
             if (!filePath) return;
-            if (window.electronAPI?.openPath) {
-                window.electronAPI.openPath(filePath, { reveal: true });
-            } else if (window.electronAPI?.showItemInFolder) {
-                window.electronAPI.showItemInFolder(filePath);
+            if (window.oicppApi?.openPath) {
+                window.oicppApi.openPath(filePath, { reveal: true });
+            } else if (window.oicppApi?.showItemInFolder) {
+                window.oicppApi.showItemInFolder(filePath);
             } else if (window.electron?.shell?.showItemInFolder) {
                 window.electron.shell.showItemInFolder(filePath);
             } else if (window.electron?.shell?.openPath) {
@@ -4616,7 +4616,7 @@ class TabManager {
         if (this.isDiscardCloseInProgress()) {
             return 0;
         }
-        if (!window.electronAPI || typeof window.electronAPI.saveFile !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.saveFile !== 'function') {
             logWarn('[TabManager][自动保存] saveFile API 不可用，跳过自动保存');
             return 0;
         }
@@ -4650,7 +4650,7 @@ class TabManager {
             }
 
             try {
-                await window.electronAPI.saveFile(filePath, content);
+                await window.oicppApi.saveFile(filePath, content);
                 if (typeof this.markTabAsSavedByUniqueKey === 'function') {
                     this.markTabAsSavedByUniqueKey(uniqueKey);
                 } else if (typeof this.markTabAsSaved === 'function') {
@@ -4837,9 +4837,9 @@ class TabManager {
         if (!img) return;
 
         let logoPath = '';
-        if (window.electronAPI && typeof window.electronAPI.getUserIconPath === 'function') {
+        if (window.oicppApi && typeof window.oicppApi.getUserIconPath === 'function') {
             try {
-                logoPath = await window.electronAPI.getUserIconPath();
+                logoPath = await window.oicppApi.getUserIconPath();
             } catch (_) {
                 logoPath = '';
             }
@@ -4857,7 +4857,7 @@ class TabManager {
 
     async loadRecentFiles(container) {
         try {
-            const recentFiles = await window.electronAPI.getRecentFiles();
+            const recentFiles = await window.oicppApi.getRecentFiles();
             const recentContainer = container.querySelector('#welcome-recent');
 
             if (!recentContainer) return;
@@ -4895,7 +4895,7 @@ class TabManager {
                 item.addEventListener('click', async (e) => {
                     const filePath = e.currentTarget.dataset.path;
                     if (filePath) {
-                        const success = await window.electronAPI.openRecentFile(filePath);
+                        const success = await window.oicppApi.openRecentFile(filePath);
                         if (!success) {
                             logWarn('[RecentFileOpenErrorSuppressed]', '无法打开文件，文件可能已被删除或移动。');
                         }
@@ -5017,9 +5017,9 @@ class TabManager {
                 if (!filePath) continue;
                 const content = this.getTabContentForSave(tab);
                 if (typeof content !== 'string') continue;
-                if (window.electronAPI?.saveFile && typeof window.electronAPI.saveFile === 'function') {
+                if (window.oicppApi?.saveFile && typeof window.oicppApi.saveFile === 'function') {
                     tasks.push(
-                        window.electronAPI.saveFile(filePath, content).then(() => {
+                        window.oicppApi.saveFile(filePath, content).then(() => {
                             this.markTabAsSavedByUniqueKey(uniqueKey);
                         }).catch((e) => {
                             (window.logWarn || console.warn)('保存文件失败:', filePath, e);

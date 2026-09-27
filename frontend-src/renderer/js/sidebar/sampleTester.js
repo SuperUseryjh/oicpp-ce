@@ -38,8 +38,8 @@ class SampleTester {
         this.setupEventListeners();
 
         try {
-            if (window.electronAPI && window.electronAPI.onSampleTesterCreateProblem) {
-                window.electronAPI.onSampleTesterCreateProblem((data) => {
+            if (window.oicppApi && window.oicppApi.onSampleTesterCreateProblem) {
+                window.oicppApi.onSampleTesterCreateProblem((data) => {
                     try {
                         logInfo('[样例测试器] 收到外部 createNewProblem:', data?.problemName);
                         if (!data || !Array.isArray(data.samples) || data.samples.length === 0) return;
@@ -55,17 +55,17 @@ class SampleTester {
                         this.isOperating = true;
                         (async () => {
                             try {
-                                const targetPath = await window.electronAPI.pathJoin(workspacePath, fileName);
+                                const targetPath = await window.oicppApi.pathJoin(workspacePath, fileName);
                                 let created = false;
-                                if (!(await window.electronAPI.checkFileExists(targetPath))) {
+                                if (!(await window.oicppApi.checkFileExists(targetPath))) {
                                     let template = '';
-                                    try { const all = await window.electronAPI.getAllSettings(); if (all?.cppTemplate) template = all.cppTemplate + '\n'; } catch (_) { }
+                                    try { const all = await window.oicppApi.getAllSettings(); if (all?.cppTemplate) template = all.cppTemplate + '\n'; } catch (_) { }
                                     if (!template) template = '';
-                                    await window.electronAPI.createFile(targetPath, template);
+                                    await window.oicppApi.createFile(targetPath, template);
                                     created = true;
                                 }
                                 try {
-                                    const content = await window.electronAPI.readFileContent(targetPath);
+                                    const content = await window.oicppApi.readFileContent(targetPath);
                                     window.tabManager?.openFile?.(fileName, content, false, targetPath);
                                 } catch (e) { logWarn('[样例测试器] 打开题目文件失败', e); }
                                 const waitEditor = async () => {
@@ -81,9 +81,9 @@ class SampleTester {
                                 this.currentFile = targetPath;
                                 await this.updateSamplesFilePath();
                                 let existing = [];
-                                if (this.samplesFilePath && await window.electronAPI.checkFileExists(this.samplesFilePath)) {
+                                if (this.samplesFilePath && await window.oicppApi.checkFileExists(this.samplesFilePath)) {
                                     try {
-                                        const oldData = JSON.parse(await window.electronAPI.readFileContent(this.samplesFilePath));
+                                        const oldData = JSON.parse(await window.oicppApi.readFileContent(this.samplesFilePath));
                                         existing = Array.isArray(oldData.samples) ? oldData.samples : [];
                                     } catch (_) { }
                                 }
@@ -530,14 +530,14 @@ class SampleTester {
                 relativePath = this.currentFile.replace(/[:\\]/g, '_');
             }
 
-            const oicppDir = await window.electronAPI.pathJoin(workspaceRoot, '.oicpp');
-            const sampleTesterDir = await window.electronAPI.pathJoin(oicppDir, 'sampleTester');
+            const oicppDir = await window.oicppApi.pathJoin(workspaceRoot, '.oicpp');
+            const sampleTesterDir = await window.oicppApi.pathJoin(oicppDir, 'sampleTester');
 
-            await window.electronAPI.ensureDirectory(oicppDir);
-            await window.electronAPI.ensureDirectory(sampleTesterDir);
+            await window.oicppApi.ensureDirectory(oicppDir);
+            await window.oicppApi.ensureDirectory(sampleTesterDir);
 
             const safeRelativePath = relativePath.replace(/[\\\/]/g, '_').replace(/[<>:"|?*]/g, '_');
-            this.samplesFilePath = await window.electronAPI.pathJoin(sampleTesterDir, `${safeRelativePath}.json`);
+            this.samplesFilePath = await window.oicppApi.pathJoin(sampleTesterDir, `${safeRelativePath}.json`);
 
             logInfo('[样例测试器] 样例文件路径:', this.samplesFilePath);
         } catch (error) {
@@ -564,14 +564,14 @@ class SampleTester {
             relativePath = filePath.replace(/[:\\]/g, '_');
         }
 
-        const oicppDir = await window.electronAPI.pathJoin(workspaceRoot, '.oicpp');
-        const sampleTesterDir = await window.electronAPI.pathJoin(oicppDir, 'sampleTester');
+        const oicppDir = await window.oicppApi.pathJoin(workspaceRoot, '.oicpp');
+        const sampleTesterDir = await window.oicppApi.pathJoin(oicppDir, 'sampleTester');
 
-        await window.electronAPI.ensureDirectory(oicppDir);
-        await window.electronAPI.ensureDirectory(sampleTesterDir);
+        await window.oicppApi.ensureDirectory(oicppDir);
+        await window.oicppApi.ensureDirectory(sampleTesterDir);
 
         const safeRelativePath = relativePath.replace(/[\\\/]/g, '_').replace(/[<>:"|?*]/g, '_');
-        return await window.electronAPI.pathJoin(sampleTesterDir, `${safeRelativePath}.json`);
+        return await window.oicppApi.pathJoin(sampleTesterDir, `${safeRelativePath}.json`);
     }
 
     async handleFileRenamed(oldPath, newPath) {
@@ -581,7 +581,7 @@ class SampleTester {
             const newSamplesPath = await this.computeSamplesFilePathForFile(newPath);
             if (!oldSamplesPath || !newSamplesPath) return;
 
-            const exists = await window.electronAPI.checkFileExists(oldSamplesPath);
+            const exists = await window.oicppApi.checkFileExists(oldSamplesPath);
             if (exists) {
                 const sep = newSamplesPath.includes('\\') ? '\\' : '/';
                 const newFileName = newSamplesPath.substring(newSamplesPath.lastIndexOf(sep) + 1);
@@ -613,10 +613,10 @@ class SampleTester {
             const samplesPath = await this.computeSamplesFilePathForFile(filePath);
             if (!samplesPath) return;
 
-            const exists = await window.electronAPI.checkFileExists(samplesPath);
+            const exists = await window.oicppApi.checkFileExists(samplesPath);
             if (!exists) return;
 
-            const result = await window.electronAPI.deleteFile(samplesPath);
+            const result = await window.oicppApi.deleteFile(samplesPath);
             if (result && result.success === false) {
                 logWarn('[样例测试器] 删除样例配置失败:', samplesPath, result.error || '未知错误');
                 return;
@@ -645,10 +645,10 @@ class SampleTester {
         }
 
         try {
-            const fileExists = await window.electronAPI.checkFileExists(this.samplesFilePath);
+            const fileExists = await window.oicppApi.checkFileExists(this.samplesFilePath);
             if (fileExists) {
                 logInfo('[样例测试器] 从文件加载样例:', this.samplesFilePath);
-                const data = await window.electronAPI.readFileContent(this.samplesFilePath);
+                const data = await window.oicppApi.readFileContent(this.samplesFilePath);
                 const parsed = JSON.parse(data);
                 this.samples = parsed.samples || [];
 
@@ -741,7 +741,7 @@ class SampleTester {
                 samples: this.serializeSamplesForSave(samples),
                 globalSettings
             };
-            await window.electronAPI.saveFile(samplesFilePath, JSON.stringify(data, null, 2));
+            await window.oicppApi.saveFile(samplesFilePath, JSON.stringify(data, null, 2));
         } catch (error) {
             logError('保存样例失败:', error);
         }
@@ -1333,20 +1333,20 @@ class SampleTester {
             throw new Error((window.i18n ? window.i18n.t('tester.noWorkspaceForSample') : '未打开工作区，无法写入大样例文件'));
         }
 
-        const rootDir = await window.electronAPI.pathJoin(workspacePath, '.oicpp', 'sampleTester', 'zip-imports');
-        await window.electronAPI.ensureDirectory(rootDir);
+        const rootDir = await window.oicppApi.pathJoin(workspacePath, '.oicpp', 'sampleTester', 'zip-imports');
+        await window.oicppApi.ensureDirectory(rootDir);
 
         let zipBaseName = 'zip';
         try {
-            const info = await window.electronAPI.getPathInfo(zipPath);
+            const info = await window.oicppApi.getPathInfo(zipPath);
             zipBaseName = this.sanitizeZipImportFileName(info?.basenameWithoutExt || 'zip', 'zip').replace(/\.[A-Za-z0-9]+$/, '');
         } catch (_) {
             zipBaseName = 'zip';
         }
 
         const uniqueTag = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const targetDir = await window.electronAPI.pathJoin(rootDir, `${zipBaseName}_${uniqueTag}`);
-        await window.electronAPI.ensureDirectory(targetDir);
+        const targetDir = await window.oicppApi.pathJoin(rootDir, `${zipBaseName}_${uniqueTag}`);
+        await window.oicppApi.ensureDirectory(targetDir);
         return targetDir;
     }
 
@@ -1354,9 +1354,9 @@ class SampleTester {
         const entryPath = String(entry?.path || '');
         const rawName = entryPath.split(/[\\/]/).pop() || fallbackName;
         const fileName = this.sanitizeZipImportFileName(rawName, fallbackName);
-        const targetPath = await window.electronAPI.pathJoin(targetDir, fileName);
+        const targetPath = await window.oicppApi.pathJoin(targetDir, fileName);
         const content = String(entry?.content || '');
-        const created = await window.electronAPI.createFile(targetPath, content);
+        const created = await window.oicppApi.createFile(targetPath, content);
         if (!created || !created.success) {
             throw new Error(created?.error || (window.i18n ? window.i18n.t('tester.writeSampleFail', {name: fileName}) : `写入样例文件失败: ${fileName}`));
         }
@@ -1370,7 +1370,7 @@ class SampleTester {
         }
 
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('dialog.selectZip') : '选择样例压缩包',
                 filters: [
                     { name: window.i18n ? window.i18n.t('dialog.zipFilter') : '压缩包', extensions: ['zip'] },
@@ -1384,7 +1384,7 @@ class SampleTester {
             }
 
             const zipPath = result.filePaths[0];
-            const zipReadResult = await window.electronAPI.readZipTextFiles(zipPath);
+            const zipReadResult = await window.oicppApi.readZipTextFiles(zipPath);
             if (!zipReadResult || !zipReadResult.success) {
                 throw new Error(zipReadResult?.error || (window.i18n ? window.i18n.t('tester.readZipFail') : '读取压缩包失败'));
             }
@@ -1711,25 +1711,25 @@ class SampleTester {
             };
         }
 
-        const userHome = await window.electronAPI.getUserHome();
-        const baseDir = await window.electronAPI.pathJoin(userHome, '.oicpp', 'sampleTester', 'freopen_runs');
+        const userHome = await window.oicppApi.getUserHome();
+        const baseDir = await window.oicppApi.pathJoin(userHome, '.oicpp', 'sampleTester', 'freopen_runs');
         const runDirName = `sample_${sample?.id || 'x'}`;
-        const runDir = await window.electronAPI.pathJoin(baseDir, runDirName);
+        const runDir = await window.oicppApi.pathJoin(baseDir, runDirName);
 
-        await window.electronAPI.ensureDirectory(baseDir);
-        await window.electronAPI.ensureDirectory(runDir);
+        await window.oicppApi.ensureDirectory(baseDir);
+        await window.oicppApi.ensureDirectory(runDir);
 
         const cleanupFiles = [];
         let outputFilePath = null;
 
         if (inputFileName) {
-            const inputFilePath = await window.electronAPI.pathJoin(runDir, inputFileName);
-            await window.electronAPI.writeFile(inputFilePath, inputData || '');
+            const inputFilePath = await window.oicppApi.pathJoin(runDir, inputFileName);
+            await window.oicppApi.writeFile(inputFilePath, inputData || '');
             cleanupFiles.push(inputFilePath);
         }
 
         if (outputFileName) {
-            outputFilePath = await window.electronAPI.pathJoin(runDir, outputFileName);
+            outputFilePath = await window.oicppApi.pathJoin(runDir, outputFileName);
             cleanupFiles.push(outputFilePath);
         }
 
@@ -1745,9 +1745,9 @@ class SampleTester {
         if (!context || !Array.isArray(context.cleanupFiles)) return;
         for (const filePath of context.cleanupFiles) {
             try {
-                const exists = await window.electronAPI.checkFileExists(filePath);
+                const exists = await window.oicppApi.checkFileExists(filePath);
                 if (exists) {
-                    await window.electronAPI.deleteFile(filePath);
+                    await window.oicppApi.deleteFile(filePath);
                 }
             } catch (_) { }
         }
@@ -1759,11 +1759,11 @@ class SampleTester {
         }
 
         try {
-            const exists = await window.electronAPI.checkFileExists(freopenContext.outputFilePath);
+            const exists = await window.oicppApi.checkFileExists(freopenContext.outputFilePath);
             if (!exists) {
                 return runResult.output || '';
             }
-            return await window.electronAPI.readFileContent(freopenContext.outputFilePath);
+            return await window.oicppApi.readFileContent(freopenContext.outputFilePath);
         } catch (error) {
             try { logWarn('[样例测试器] 读取freopen输出文件失败:', error); } catch (_) { }
             return runResult.output || '';
@@ -1866,7 +1866,7 @@ class SampleTester {
     }
 
     async selectInputFile(id) {
-        const result = await window.electronAPI.showOpenDialog({
+        const result = await window.oicppApi.showOpenDialog({
             title: window.i18n ? window.i18n.t('tester.selectInputFile') : '选择输入文件',
             filters: [
                 { name: window.i18n ? window.i18n.t('tester.textFileFilter') : '文本文件', extensions: ['txt', 'in'] },
@@ -1888,7 +1888,7 @@ class SampleTester {
     }
 
     async selectOutputFile(id) {
-        const result = await window.electronAPI.showOpenDialog({
+        const result = await window.oicppApi.showOpenDialog({
             title: window.i18n ? window.i18n.t('tester.selectOutputFile') : '选择输出文件',
             filters: [
                 { name: window.i18n ? window.i18n.t('tester.textFileFilter') : '文本文件', extensions: ['txt', 'out', 'ans'] },
@@ -1912,13 +1912,13 @@ class SampleTester {
         if (!sample || !sample.input) return false;
 
         try {
-            const pathInfo = await window.electronAPI.getPathInfo(sample.input);
+            const pathInfo = await window.oicppApi.getPathInfo(sample.input);
             if (!pathInfo || !pathInfo.dirname || !pathInfo.basenameWithoutExt) return false;
 
             const candidates = [`${pathInfo.basenameWithoutExt}.ans`, `${pathInfo.basenameWithoutExt}.out`];
             for (const name of candidates) {
-                const candidatePath = await window.electronAPI.pathJoin(pathInfo.dirname, name);
-                if (await window.electronAPI.checkFileExists(candidatePath)) {
+                const candidatePath = await window.oicppApi.pathJoin(pathInfo.dirname, name);
+                if (await window.oicppApi.checkFileExists(candidatePath)) {
                     sample.outputType = 'file';
                     sample.output = candidatePath;
                     try { logInfo('[样例测试器] 自动匹配输出文件:', candidatePath); } catch (_) { }
@@ -2218,7 +2218,7 @@ class SampleTester {
         let inputData = '';
         if (sample.inputType === 'file') {
             try {
-                inputData = await window.electronAPI.readFileContent(sample.input);
+                inputData = await window.oicppApi.readFileContent(sample.input);
             } catch (error) {
                 throw new Error((window.i18n ? window.i18n.t('tester.cannotReadInputFile', {msg: error.message}) : '无法读取输入文件: ' + error.message));
             }
@@ -2227,19 +2227,19 @@ class SampleTester {
         }
 
         const suffix = Date.now() + '_' + (++this.interactiveTempSequence) + '_' + (sample.id || 'x');
-        const inputFilePath = await window.electronAPI.saveTempFile(
+        const inputFilePath = await window.oicppApi.saveTempFile(
             'interactive_input_' + suffix + '.txt',
             inputData
         );
 
         try {
             const contestantWorkingDirectory = this.currentFile
-                ? await window.electronAPI.pathDirname(this.currentFile)
+                ? await window.oicppApi.pathDirname(this.currentFile)
                 : null;
             const graderWorkingDirectory = this.globalSettings.graderPath
-                ? await window.electronAPI.pathDirname(this.globalSettings.graderPath)
+                ? await window.oicppApi.pathDirname(this.globalSettings.graderPath)
                 : null;
-            const runResult = await window.electronAPI.runInteractive({
+            const runResult = await window.oicppApi.runInteractive({
                 contestantExecutablePath: executablePath,
                 graderExecutablePath,
                 inputFilePath,
@@ -2286,7 +2286,7 @@ class SampleTester {
             };
         } finally {
             try {
-                await window.electronAPI.deleteTempFile(inputFilePath);
+                await window.oicppApi.deleteTempFile(inputFilePath);
             } catch (_) { }
         }
     }
@@ -2304,7 +2304,7 @@ class SampleTester {
             let inputData = '';
             if (sample.inputType === 'file') {
                 try {
-                    inputData = await window.electronAPI.readFileContent(sample.input);
+                    inputData = await window.oicppApi.readFileContent(sample.input);
                 } catch (error) {
                     throw new Error((window.i18n ? window.i18n.t('tester.cannotReadInputFile', {msg: error.message}) : `无法读取输入文件: ${error.message}`));
                 }
@@ -2316,7 +2316,7 @@ class SampleTester {
             let expectedOutput = '';
             if (sample.outputType === 'file') {
                 try {
-                    expectedOutput = await window.electronAPI.readFileContent(sample.output);
+                    expectedOutput = await window.oicppApi.readFileContent(sample.output);
                 } catch (error) {
                     throw new Error((window.i18n ? window.i18n.t('tester.cannotReadOutputFile', {msg: error.message}) : `无法读取输出文件: ${error.message}`));
                 }
@@ -2365,7 +2365,7 @@ class SampleTester {
                     const normalizedActual = actualOutput.trimEnd();
                     const normalizedExpected = expectedOutput.trimEnd();
 
-                    const spjExists = await window.electronAPI.checkFileExists(spjExecutablePath);
+                    const spjExists = await window.oicppApi.checkFileExists(spjExecutablePath);
 
                     if (!spjExists) {
                         status = 'WA';
@@ -2486,7 +2486,7 @@ class SampleTester {
             let inputData = '';
             if (sample.inputType === 'file') {
                 try {
-                    inputData = await window.electronAPI.readFileContent(sample.input);
+                    inputData = await window.oicppApi.readFileContent(sample.input);
                 } catch (error) {
                     throw new Error(`无法读取输入文件: ${error.message}`);
                 }
@@ -2502,7 +2502,7 @@ class SampleTester {
             let expectedOutput = '';
             if (sample.outputType === 'file') {
                 try {
-                    expectedOutput = await window.electronAPI.readFileContent(sample.output);
+                    expectedOutput = await window.oicppApi.readFileContent(sample.output);
                 } catch (error) {
                     throw new Error(`无法读取输出文件: ${error.message}`);
                 }
@@ -2555,7 +2555,7 @@ class SampleTester {
                         const normalizedActual = actualOutput.trimEnd();
                         const normalizedExpected = expectedOutput.trimEnd();
 
-                        const spjExists = await window.electronAPI.checkFileExists(spjExecutablePath);
+                        const spjExists = await window.oicppApi.checkFileExists(spjExecutablePath);
 
                         if (!spjExists) {
 
@@ -2696,16 +2696,16 @@ class SampleTester {
         // from disk, while the editor content above is only in memory.  Relying
         // on the periodic auto-save means a busy renderer can compile an older
         // (occasionally empty) version and report its output as this sample's.
-        if (!window.electronAPI?.saveFile) {
+        if (!window.oicppApi?.saveFile) {
             throw new Error('保存文件接口不可用');
         }
-        await window.electronAPI.saveFile(this.currentFile, content);
+        await window.oicppApi.saveFile(this.currentFile, content);
         try {
             const uniqueKey = String(this.currentFile).replace(/\\/g, '/');
             window.tabManager?.markTabAsSavedByUniqueKey?.(uniqueKey);
         } catch (_) { }
 
-        const settings = await window.electronAPI.getAllSettings();
+        const settings = await window.oicppApi.getAllSettings();
         const compilerPath = settings.compilerPath;
         let compilerArgs = settings.compilerArgs || '-std=c++14 -O2';
         let testlibIncludePath = '';
@@ -2716,11 +2716,11 @@ class SampleTester {
 
         if (useTestlib) {
             if (settings.testlibPath) {
-                const pathInfo = await window.electronAPI.getPathInfo(settings.testlibPath);
+                const pathInfo = await window.oicppApi.getPathInfo(settings.testlibPath);
                 testlibIncludePath = pathInfo.dirname;
             } else {
-                const pathInfo = await window.electronAPI.getPathInfo(compilerPath);
-                testlibIncludePath = await window.electronAPI.pathJoin(pathInfo.dirname, '..', 'include');
+                const pathInfo = await window.oicppApi.getPathInfo(compilerPath);
+                testlibIncludePath = await window.oicppApi.pathJoin(pathInfo.dirname, '..', 'include');
             }
             compilerArgs += ` -I"${testlibIncludePath}"`;
         }
@@ -2740,7 +2740,7 @@ class SampleTester {
         if (
             this.mainCompileCache.key === cacheKey &&
             this.mainCompileCache.executablePath &&
-            await window.electronAPI.checkFileExists(this.mainCompileCache.executablePath)
+            await window.oicppApi.checkFileExists(this.mainCompileCache.executablePath)
         ) {
             logInfo('[样例测试器] 命中编译缓存，跳过编译');
             return {
@@ -2755,12 +2755,12 @@ class SampleTester {
             };
         }
 
-        const currentFilePathInfo = await window.electronAPI.getPathInfo(this.currentFile);
-        const tempDir = await window.electronAPI.pathJoin(await window.electronAPI.getUserHome(), '.oicpp', 'codeTemp');
-        await window.electronAPI.ensureDirectory(tempDir);
-        const executableFile = await window.electronAPI.pathJoin(tempDir, cachedExeName);
+        const currentFilePathInfo = await window.oicppApi.getPathInfo(this.currentFile);
+        const tempDir = await window.oicppApi.pathJoin(await window.oicppApi.getUserHome(), '.oicpp', 'codeTemp');
+        await window.oicppApi.ensureDirectory(tempDir);
+        const executableFile = await window.oicppApi.pathJoin(tempDir, cachedExeName);
 
-        const result = await window.electronAPI.compileFile({
+        const result = await window.oicppApi.compileFile({
             inputFile: this.currentFile,
             outputFile: executableFile,
             compilerPath: compilerPath,
@@ -2774,7 +2774,7 @@ class SampleTester {
                     this.mainCompileCache.executablePath !== executableFile
                 ) {
                     try {
-                        await window.electronAPI.deleteTempFile(this.mainCompileCache.executablePath);
+                        await window.oicppApi.deleteTempFile(this.mainCompileCache.executablePath);
                     } catch (_) { }
                 }
 
@@ -2810,7 +2810,7 @@ class SampleTester {
         if (memoryLimit !== undefined) {
             execOptions.memoryLimit = memoryLimit;
         }
-        return await window.electronAPI.runProgram(execOptions, input, timeLimit, memoryLimit);
+        return await window.oicppApi.runProgram(execOptions, input, timeLimit, memoryLimit);
     }
 
     compareOutput(actual, expected) {
@@ -3109,7 +3109,7 @@ class SampleTester {
                 return;
             }
 
-            const result = await window.electronAPI.showSaveDialog({
+            const result = await window.oicppApi.showSaveDialog({
                 title: window.i18n ? window.i18n.t('tester.exportOutput') : '导出样例输出',
                 defaultPath: `sample_${sampleId}_output.txt`,
                 filters: [
@@ -3119,7 +3119,7 @@ class SampleTester {
             });
 
             if (!result.canceled && result.filePath) {
-                await window.electronAPI.saveFile(result.filePath, sample.result.rawOutput || sample.result.output);
+                await window.oicppApi.saveFile(result.filePath, sample.result.rawOutput || sample.result.output);
 
                 const statusContainer = document.querySelector(`[data-sample-id="${sampleId}"] .sample-status`);
                 if (statusContainer) {
@@ -3214,8 +3214,8 @@ class SampleTester {
 
             logInfo('[样例测试器-自动保存] 开始保存文件:', filePath);
 
-            if (window.electronAPI && window.electronAPI.saveFile) {
-                await window.electronAPI.saveFile(filePath, content);
+            if (window.oicppApi && window.oicppApi.saveFile) {
+                await window.oicppApi.saveFile(filePath, content);
                 logInfo('[样例测试器-自动保存] 文件保存成功');
 
                 if (window.tabManager) {
@@ -3242,7 +3242,7 @@ class SampleTester {
 
         let spjContent;
         try {
-            spjContent = await window.electronAPI.readFileContent(spjPath);
+            spjContent = await window.oicppApi.readFileContent(spjPath);
         } catch (error) {
             throw new Error(`无法读取SPJ文件: ${error.message}`);
         }
@@ -3251,7 +3251,7 @@ class SampleTester {
             throw new Error(window.i18n ? window.i18n.t('tester.spjContentEmpty') : 'SPJ文件内容为空');
         }
 
-        const settings = await window.electronAPI.getAllSettings();
+        const settings = await window.oicppApi.getAllSettings();
         const compilerPath = settings.compilerPath;
         let compilerArgs = settings.compilerArgs || '-std=c++14 -O2';
         let testlibIncludePath = '';
@@ -3261,12 +3261,12 @@ class SampleTester {
         }
 
         if (settings.testlibPath) {
-            const testlibPathInfo = await window.electronAPI.getPathInfo(settings.testlibPath);
+            const testlibPathInfo = await window.oicppApi.getPathInfo(settings.testlibPath);
             testlibIncludePath = testlibPathInfo.dirname;
             compilerArgs += ` -I"${testlibIncludePath}"`;
         } else {
-            const pathInfo = await window.electronAPI.getPathInfo(compilerPath);
-            testlibIncludePath = await window.electronAPI.pathJoin(pathInfo.dirname, '..', 'include');
+            const pathInfo = await window.oicppApi.getPathInfo(compilerPath);
+            testlibIncludePath = await window.oicppApi.pathJoin(pathInfo.dirname, '..', 'include');
             compilerArgs += ` -I"${testlibIncludePath}"`;
         }
 
@@ -3281,7 +3281,7 @@ class SampleTester {
         if (
             this.spjCompileCache.key === cacheKey &&
             this.spjCompileCache.executablePath &&
-            await window.electronAPI.checkFileExists(this.spjCompileCache.executablePath)
+            await window.oicppApi.checkFileExists(this.spjCompileCache.executablePath)
         ) {
             return {
                 success: true,
@@ -3296,12 +3296,12 @@ class SampleTester {
         }
 
         const isWin2 = (typeof window !== 'undefined' && window.process && window.process.platform === 'win32');
-        const tempDir = await window.electronAPI.pathJoin(await window.electronAPI.getUserHome(), '.oicpp', 'codeTemp');
-        await window.electronAPI.ensureDirectory(tempDir);
-        const executableFile = await window.electronAPI.pathJoin(tempDir, `spj_${cacheKey}${isWin2 ? '.exe' : ''}`);
-        const spjPathInfo = await window.electronAPI.getPathInfo(spjPath);
+        const tempDir = await window.oicppApi.pathJoin(await window.oicppApi.getUserHome(), '.oicpp', 'codeTemp');
+        await window.oicppApi.ensureDirectory(tempDir);
+        const executableFile = await window.oicppApi.pathJoin(tempDir, `spj_${cacheKey}${isWin2 ? '.exe' : ''}`);
+        const spjPathInfo = await window.oicppApi.getPathInfo(spjPath);
 
-        const result = await window.electronAPI.compileFile({
+        const result = await window.oicppApi.compileFile({
             inputFile: spjPath,
             outputFile: executableFile,
             compilerPath: compilerPath,
@@ -3315,7 +3315,7 @@ class SampleTester {
                     this.spjCompileCache.executablePath !== executableFile
                 ) {
                     try {
-                        await window.electronAPI.deleteTempFile(this.spjCompileCache.executablePath);
+                        await window.oicppApi.deleteTempFile(this.spjCompileCache.executablePath);
                     } catch (_) { }
                 }
 
@@ -3345,7 +3345,7 @@ class SampleTester {
 
         let graderContent;
         try {
-            graderContent = await window.electronAPI.readFileContent(graderPath);
+            graderContent = await window.oicppApi.readFileContent(graderPath);
         } catch (error) {
             throw new Error('无法读取 grader.cpp 文件: ' + error.message);
         }
@@ -3354,7 +3354,7 @@ class SampleTester {
             throw new Error(window.i18n ? window.i18n.t('tester.graderContentEmpty') : 'grader.cpp 文件内容为空');
         }
 
-        const settings = await window.electronAPI.getAllSettings();
+        const settings = await window.oicppApi.getAllSettings();
         const compilerPath = settings.compilerPath;
         let compilerArgs = settings.compilerArgs || '-std=c++14 -O2';
         let testlibIncludePath = '';
@@ -3365,11 +3365,11 @@ class SampleTester {
 
         if (this.globalSettings.useTestlib) {
             if (settings.testlibPath) {
-                const testlibPathInfo = await window.electronAPI.getPathInfo(settings.testlibPath);
+                const testlibPathInfo = await window.oicppApi.getPathInfo(settings.testlibPath);
                 testlibIncludePath = testlibPathInfo.dirname;
             } else {
-                const pathInfo = await window.electronAPI.getPathInfo(compilerPath);
-                testlibIncludePath = await window.electronAPI.pathJoin(pathInfo.dirname, '..', 'include');
+                const pathInfo = await window.oicppApi.getPathInfo(compilerPath);
+                testlibIncludePath = await window.oicppApi.pathJoin(pathInfo.dirname, '..', 'include');
             }
             compilerArgs += ' -I"' + testlibIncludePath + '"';
         }
@@ -3385,7 +3385,7 @@ class SampleTester {
         if (
             this.graderCompileCache.key === cacheKey &&
             this.graderCompileCache.executablePath &&
-            await window.electronAPI.checkFileExists(this.graderCompileCache.executablePath)
+            await window.oicppApi.checkFileExists(this.graderCompileCache.executablePath)
         ) {
             return {
                 success: true,
@@ -3400,15 +3400,15 @@ class SampleTester {
         }
 
         const isWin = (typeof window !== 'undefined' && window.process && window.process.platform === 'win32');
-        const tempDir = await window.electronAPI.pathJoin(await window.electronAPI.getUserHome(), '.oicpp', 'codeTemp');
-        await window.electronAPI.ensureDirectory(tempDir);
-        const executableFile = await window.electronAPI.pathJoin(
+        const tempDir = await window.oicppApi.pathJoin(await window.oicppApi.getUserHome(), '.oicpp', 'codeTemp');
+        await window.oicppApi.ensureDirectory(tempDir);
+        const executableFile = await window.oicppApi.pathJoin(
             tempDir,
             'grader_' + cacheKey + (isWin ? '.exe' : '')
         );
-        const graderPathInfo = await window.electronAPI.getPathInfo(graderPath);
+        const graderPathInfo = await window.oicppApi.getPathInfo(graderPath);
 
-        const result = await window.electronAPI.compileFile({
+        const result = await window.oicppApi.compileFile({
             inputFile: graderPath,
             outputFile: executableFile,
             compilerPath,
@@ -3422,7 +3422,7 @@ class SampleTester {
                 this.graderCompileCache.executablePath !== executableFile
             ) {
                 try {
-                    await window.electronAPI.deleteTempFile(this.graderCompileCache.executablePath);
+                    await window.oicppApi.deleteTempFile(this.graderCompileCache.executablePath);
                 } catch (_) { }
             }
 
@@ -3448,14 +3448,14 @@ class SampleTester {
     async judgeWithSpj(spjExecutablePath, inputData, actualOutput, expectedOutput) {
         try {
             const suffix = `${Date.now()}_${++this.spjTempSequence}`;
-            const inputFile = await window.electronAPI.saveTempFile(`spj_input_${suffix}.txt`, inputData);
-            const actualFile = await window.electronAPI.saveTempFile(`spj_actual_${suffix}.txt`, actualOutput);
-            const expectedFile = await window.electronAPI.saveTempFile(`spj_expected_${suffix}.txt`, expectedOutput);
+            const inputFile = await window.oicppApi.saveTempFile(`spj_input_${suffix}.txt`, inputData);
+            const actualFile = await window.oicppApi.saveTempFile(`spj_actual_${suffix}.txt`, actualOutput);
+            const expectedFile = await window.oicppApi.saveTempFile(`spj_expected_${suffix}.txt`, expectedOutput);
             const tempFiles = [inputFile, actualFile, expectedFile];
             tempFiles.forEach(file => this.spjTempFiles.add(file));
 
             try {
-                const workingDir = await window.electronAPI.pathDirname(spjExecutablePath);
+                const workingDir = await window.oicppApi.pathDirname(spjExecutablePath);
                 const spjParams = {
                     executablePath: spjExecutablePath,
                     args: [inputFile, actualFile, expectedFile],
@@ -3464,7 +3464,7 @@ class SampleTester {
                     skipPreKill: true
                 };
 
-                const spjResult = await window.electronAPI.runProgram(spjParams);
+                const spjResult = await window.oicppApi.runProgram(spjParams);
                 const output = [spjResult.stdout, spjResult.stderr].filter(Boolean).join(spjResult.stdout && spjResult.stderr ? '\n' : '');
 
                 if (spjResult.outputLimitExceeded) {
@@ -3491,7 +3491,7 @@ class SampleTester {
         const targets = files || Array.from(this.spjTempFiles);
         await Promise.all(targets.map(async (file) => {
             try {
-                await window.electronAPI.deleteTempFile(file);
+                await window.oicppApi.deleteTempFile(file);
             } catch (_) { }
             this.spjTempFiles.delete(file);
         }));
@@ -3585,7 +3585,7 @@ class SampleTester {
 
     async selectGlobalSpjFile() {
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: '选择SPJ代码文件',
                 filters: [
                     { name: 'C++ Files', extensions: ['cpp', 'cc', 'cxx'] },
@@ -3615,7 +3615,7 @@ class SampleTester {
 
     async selectGlobalGraderFile() {
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: '选择 grader.cpp 文件',
                 filters: [
                     { name: 'C++ Files', extensions: ['cpp', 'cc', 'cxx'] },

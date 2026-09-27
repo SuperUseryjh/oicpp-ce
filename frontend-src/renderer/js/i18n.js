@@ -33,16 +33,16 @@ class I18nManager {
     async _doInit() {
         try {
             // Load current language from settings
-            if (window.electronAPI && typeof window.electronAPI.getLanguage === 'function') {
-                this._currentLang = await window.electronAPI.getLanguage();
+            if (window.oicppApi && typeof window.oicppApi.getLanguage === 'function') {
+                this._currentLang = await window.oicppApi.getLanguage();
             }
 
             // Load current language file
             await this._loadCurrentLanguage();
 
             // Listen for language changes
-            if (window.electronAPI && typeof window.electronAPI.onLanguageChanged === 'function') {
-                window.electronAPI.onLanguageChanged(async (langCode) => {
+            if (window.oicppApi && typeof window.oicppApi.onLanguageChanged === 'function') {
+                window.oicppApi.onLanguageChanged(async (langCode) => {
                     this._currentLang = langCode || 'zh-cn';
                     await this._loadCurrentLanguage();
                     this._notifyListeners();
@@ -74,15 +74,15 @@ class I18nManager {
 
     async _loadCurrentLanguage() {
         try {
-            if (window.electronAPI && typeof window.electronAPI.getLanguageFile === 'function') {
-                const messages = await window.electronAPI.getLanguageFile(this._currentLang);
+            if (window.oicppApi && typeof window.oicppApi.getLanguageFile === 'function') {
+                const messages = await window.oicppApi.getLanguageFile(this._currentLang);
                 if (messages) {
                     this._messages = messages;
                     this._loaded = true;
 
                     // Also try to load fallback (Chinese)
                     if (this._currentLang !== 'zh-cn') {
-                        const fallback = await window.electronAPI.getLanguageFile('zh-cn');
+                        const fallback = await window.oicppApi.getLanguageFile('zh-cn');
                         if (fallback) {
                             this._fallbackMessages = fallback;
                         }
@@ -147,8 +147,8 @@ class I18nManager {
      */
     async getAvailableLanguages() {
         try {
-            if (window.electronAPI && typeof window.electronAPI.getAvailableLanguages === 'function') {
-                return await window.electronAPI.getAvailableLanguages();
+            if (window.oicppApi && typeof window.oicppApi.getAvailableLanguages === 'function') {
+                return await window.oicppApi.getAvailableLanguages();
             }
         } catch (e) {
             logError('[i18n] 获取可用语言列表失败:', e);
@@ -162,8 +162,8 @@ class I18nManager {
     async setLanguage(langCode) {
         if (!langCode || langCode === this._currentLang) return;
         try {
-            if (window.electronAPI && typeof window.electronAPI.updateSettings === 'function') {
-                await window.electronAPI.updateSettings({ language: langCode });
+            if (window.oicppApi && typeof window.oicppApi.updateSettings === 'function') {
+                await window.oicppApi.updateSettings({ language: langCode });
             }
         } catch (error) {
             logError('[i18n] 设置语言失败:', error);

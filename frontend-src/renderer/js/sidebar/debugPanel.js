@@ -730,7 +730,7 @@ class DebugPanel {
             return;
         } catch (_) { }
         try {
-            window?.electronAPI?.ipcRenderer?.send?.(channel, ...args);
+            window.oicppApi?.send?.(channel, args);
         } catch (_) { }
     }
 

@@ -59,14 +59,14 @@ class IntegratedTerminalPanel {
             this.startResizeDrag(event);
         });
 
-        if (window.electronAPI?.onTerminalData) {
-            window.electronAPI.onTerminalData((payload) => {
+        if (window.oicppApi?.onTerminalData) {
+            window.oicppApi.onTerminalData((payload) => {
                 this.handleTerminalData(payload);
             });
         }
 
-        if (window.electronAPI?.onTerminalExit) {
-            window.electronAPI.onTerminalExit((payload) => {
+        if (window.oicppApi?.onTerminalExit) {
+            window.oicppApi.onTerminalExit((payload) => {
                 this.handleTerminalExit(payload);
             });
         }
@@ -130,7 +130,7 @@ class IntegratedTerminalPanel {
     }
 
     async refreshFeatureStatus() {
-        if (!window.electronAPI?.getTerminalFeatureStatus) {
+        if (!window.oicppApi?.getTerminalFeatureStatus) {
             this.status = {
                 available: false,
                 reason: '终端接口不可用',
@@ -141,7 +141,7 @@ class IntegratedTerminalPanel {
         }
 
         try {
-            const status = await window.electronAPI.getTerminalFeatureStatus();
+            const status = await window.oicppApi.getTerminalFeatureStatus();
             this.status = status || { available: false, reason: window.i18n ? window.i18n.t('panel.unknownError') : '未知错误', detail: '' };
         } catch (error) {
             this.status = {
@@ -263,7 +263,7 @@ class IntegratedTerminalPanel {
                 session.terminal.options.fontSize = fontSize;
                 session.fitAddon.fit();
                 if (session.remoteId) {
-                    window.electronAPI.resizeTerminal(session.remoteId, session.terminal.cols, session.terminal.rows);
+                    window.oicppApi.resizeTerminal(session.remoteId, session.terminal.cols, session.terminal.rows);
                 }
             } catch (_) { }
         }
@@ -384,7 +384,7 @@ class IntegratedTerminalPanel {
 
         let created;
         try {
-            created = await window.electronAPI.createTerminal(createPayload);
+            created = await window.oicppApi.createTerminal(createPayload);
         } catch (error) {
             terminal.writeln('\r\n[Error] 创建终端失败: ' + (error?.message || String(error)));
             tab.classList.remove('pending');
@@ -432,7 +432,7 @@ class IntegratedTerminalPanel {
                 }
                 return;
             }
-            window.electronAPI.writeTerminal(provisionalSession.remoteId, data);
+            window.oicppApi.writeTerminal(provisionalSession.remoteId, data);
         });
 
         this.setupTerminalClipboardShortcuts(terminal, provisionalSession);
@@ -469,7 +469,7 @@ class IntegratedTerminalPanel {
             }
 
             try {
-                await window.electronAPI?.writeTerminal?.(remoteId, String(text));
+                await window.oicppApi?.writeTerminal?.(remoteId, String(text));
             } catch (_) {
             }
         };
@@ -557,13 +557,13 @@ class IntegratedTerminalPanel {
 
     async initializeSessionEncodingIfNeeded(session) {
         const terminalId = session?.remoteId;
-        if (!terminalId || !window.electronAPI?.getPlatform || !window.electronAPI?.writeTerminal) {
+        if (!terminalId || !window.oicppApi?.getPlatform || !window.oicppApi?.writeTerminal) {
             return;
         }
 
         let platform = '';
         try {
-            platform = String(await window.electronAPI.getPlatform() || '').toLowerCase();
+            platform = String(await window.oicppApi.getPlatform() || '').toLowerCase();
         } catch (_) {
             return;
         }
@@ -575,7 +575,7 @@ class IntegratedTerminalPanel {
                 initCmd = '[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);chcp 65001 > $null\r';
             }
             try {
-                await window.electronAPI.writeTerminal(terminalId, initCmd);
+                await window.oicppApi.writeTerminal(terminalId, initCmd);
             } catch (_) {
             }
         }
@@ -584,7 +584,7 @@ class IntegratedTerminalPanel {
         const startupCommand = this.resolveTerminalStartupCommand();
         if (startupCommand) {
             try {
-                await window.electronAPI.writeTerminal(terminalId, startupCommand + '\r');
+                await window.oicppApi.writeTerminal(terminalId, startupCommand + '\r');
             } catch (_) {
             }
         }
@@ -745,8 +745,8 @@ class IntegratedTerminalPanel {
         }
 
         try {
-            if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-                await window.electronAPI.openExternal(targetUrl);
+            if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+                await window.oicppApi.openExternal(targetUrl);
             } else if (window.electron && window.electron.shell && typeof window.electron.shell.openExternal === 'function') {
                 window.electron.shell.openExternal(targetUrl);
             } else if (typeof window.open === 'function') {
@@ -809,7 +809,7 @@ class IntegratedTerminalPanel {
         } catch (_) { }
 
         try {
-            const result = await window.electronAPI?.clipboardWriteText?.(value);
+            const result = await window.oicppApi?.clipboardWriteText?.(value);
             if (result?.success) {
                 return;
             }
@@ -824,7 +824,7 @@ class IntegratedTerminalPanel {
 
         if (!text) {
             try {
-                const result = await window.electronAPI?.clipboardReadText?.();
+                const result = await window.oicppApi?.clipboardReadText?.();
                 text = result?.success ? String(result.text || '') : '';
             } catch (_) { }
         }
@@ -844,7 +844,7 @@ class IntegratedTerminalPanel {
         }
 
         try {
-            await window.electronAPI.writeTerminal(terminalId, text);
+            await window.oicppApi.writeTerminal(terminalId, text);
         } catch (_) { }
     }
 
@@ -890,14 +890,14 @@ class IntegratedTerminalPanel {
 
         let platform = 'windows';
         try {
-            if (window.electronAPI?.getPlatform) {
-                platform = await window.electronAPI.getPlatform();
+            if (window.oicppApi?.getPlatform) {
+                platform = await window.oicppApi.getPlatform();
             }
         } catch (_) { }
 
         const session = this.sessions.get(terminalId);
         const command = this.buildRunCommandForShell(executablePath, session?.shell || '', platform);
-        await window.electronAPI.writeTerminal(terminalId, command);
+        await window.oicppApi.writeTerminal(terminalId, command);
         return terminalId;
     }
 
@@ -1058,7 +1058,7 @@ class IntegratedTerminalPanel {
 
         if (session.remoteId) {
             try {
-                await window.electronAPI.killTerminal(session.remoteId);
+                await window.oicppApi.killTerminal(session.remoteId);
             } catch (_) {}
         }
 
@@ -1138,7 +1138,7 @@ class IntegratedTerminalPanel {
         try {
             session.fitAddon.fit();
             if (session.remoteId) {
-                window.electronAPI.resizeTerminal(session.remoteId, session.terminal.cols, session.terminal.rows);
+                window.oicppApi.resizeTerminal(session.remoteId, session.terminal.cols, session.terminal.rows);
             }
         } catch (_) {}
     }
@@ -1146,9 +1146,9 @@ class IntegratedTerminalPanel {
     async getPreferredCwd() {
         const app = this.getApp();
         const active = typeof app?.getActiveFilePath === 'function' ? app.getActiveFilePath() : null;
-        if (active && !app?.isCloudFilePath?.(active) && typeof window.electronAPI?.pathDirname === 'function') {
+        if (active && !app?.isCloudFilePath?.(active) && typeof window.oicppApi?.pathDirname === 'function') {
             try {
-                return await window.electronAPI.pathDirname(active);
+                return await window.oicppApi.pathDirname(active);
             } catch (_) { }
         }
 

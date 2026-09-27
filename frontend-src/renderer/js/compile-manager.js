@@ -239,8 +239,8 @@ class CompilerManager {
         try {
             const isIntegratedOnlyPlatform = !!(typeof window !== 'undefined' && window.process && (window.process.platform === 'darwin' || window.process.platform === 'linux'));
             const isMacPlatform = !!(typeof window !== 'undefined' && window.process && window.process.platform === 'darwin');
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const allSettings = await window.oicppApi.getAllSettings();
                 if (allSettings) {
                     const loadedCompilerArgs = allSettings.compilerArgs || (isMacPlatform ? '-std=c++14 -O2' : '-std=c++14 -O2 -static');
                     this.updateSettings({
@@ -253,7 +253,7 @@ class CompilerManager {
                     logInfo('编译器设置已加载:', this.settings);
                 }
             } else {
-                logInfo('window.electronAPI 不可用，使用默认编译器设置');
+                logInfo('window.oicppApi 不可用，使用默认编译器设置');
                 const savedSettings = localStorage.getItem('oicpp-settings');
                 if (savedSettings) {
                     const parsed = JSON.parse(savedSettings);
@@ -449,11 +449,11 @@ class CompilerManager {
             let token = '';
             let loginToken = '';
             try {
-                if (window.electronAPI && window.electronAPI.getEncodedToken) {
-                    token = await window.electronAPI.getEncodedToken();
+                if (window.oicppApi && window.oicppApi.getEncodedToken) {
+                    token = await window.oicppApi.getEncodedToken();
                 }
-                if (window.electronAPI && window.electronAPI.getIdeLoginStatus) {
-                    const status = await window.electronAPI.getIdeLoginStatus();
+                if (window.oicppApi && window.oicppApi.getIdeLoginStatus) {
+                    const status = await window.oicppApi.getIdeLoginStatus();
                     loginToken = status?.loginToken || '';
                 }
             } catch (e) { logWarn('获取编码 token 失败:', e); }
@@ -622,8 +622,8 @@ class CompilerManager {
 
     async checkFileExists(filePath) {
         try {
-            if (window.electronAPI && window.electronAPI.checkFileExists) {
-                return await window.electronAPI.checkFileExists(filePath);
+            if (window.oicppApi && window.oicppApi.checkFileExists) {
+                return await window.oicppApi.checkFileExists(filePath);
             }
 
             logWarn('无法检查文件存在性，假设文件存在:', filePath);
@@ -1543,8 +1543,8 @@ class CompilerManager {
 
             logInfo('[自动保存] 开始保存文件:', filePath);
             
-            if (window.electronAPI && window.electronAPI.saveFile) {
-                await window.electronAPI.saveFile(filePath, content);
+            if (window.oicppApi && window.oicppApi.saveFile) {
+                await window.oicppApi.saveFile(filePath, content);
                 logInfo('[自动保存] 文件保存成功');
                 
                 if (window.tabManager) {

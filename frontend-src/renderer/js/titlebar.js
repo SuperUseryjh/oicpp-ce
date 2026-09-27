@@ -219,7 +219,7 @@ class TitlebarManager {
             if (result === 'cancel' || !result) return false;
             if (result === 'save') {
                 const content = window.tabManager.getTabContentForSave?.(tab);
-                const savedPath = await window.electronAPI?.saveAsFile?.(content);
+                const savedPath = await window.oicppApi?.saveAsFile?.(content);
                 if (!savedPath) return false;
             }
         }

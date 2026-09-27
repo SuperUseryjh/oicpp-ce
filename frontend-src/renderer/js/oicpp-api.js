@@ -2,7 +2,7 @@
  * OICPP IDE 的应用 API 层（Tauri 原生）。
  *
  * 背景：移植初期为了复用原 Electron 渲染层，运行期注入了一层「模拟 Electron」的 shim
- * （`window.electronAPI` / `ipcRenderer` / `process` 等）。那是权宜之计，副作用是调试时
+ * （`window.oicppApi` / `ipcRenderer` / `process` 等）。那是权宜之计，副作用是调试时
  * 要先判断「这个行为是原代码的问题，还是 shim 没模拟对」。
  *
  * 从现在起逐模块迁移：渲染层直接调用本模块，不再经过 Electron 模拟层。
@@ -20,7 +20,11 @@
     var CHANNELS = {
         pickFolder: 'open-folder-dialog',
         openCompilerSettings: 'open-compiler-settings',
-        fetchJson: 'fetch-json'
+        fetchJson: 'fetch-json',
+        readDirectory: 'read-directory',
+        ensureDirectory: 'ensure-directory',
+        walkDirectory: 'walk-directory',
+        readFileContent: 'read-file-content'
     };
 
     function core() {
@@ -75,6 +79,28 @@
             getJson: function (url) {
                 return invoke(CHANNELS.fetchJson, [url]);
             }
+        },
+        fs: {
+            /// 读目录（工作区选择器用，返回 {name, path, type} 列表）
+            readDirectory: function (dirPath) {
+                return invoke(CHANNELS.readDirectory, [dirPath]);
+            },
+            /// 确保目录存在（新建文件夹）
+            ensureDirectory: function (dirPath) {
+                return invoke(CHANNELS.ensureDirectory, [dirPath]);
+            },
+            /// 递归遍历工作区（快速打开文件用）
+            walkDirectory: function (root, options) {
+                return invoke(CHANNELS.walkDirectory, [root, options]);
+            },
+            /// 读文本文件内容
+            readFile: function (filePath) {
+                return invoke(CHANNELS.readFileContent, [filePath]);
+            }
+        },
+        /// 原始通道发送（不等结果）。给需要直达 Rust 通道的场景用，例如调试面板上报状态。
+        send: function (channel, args) {
+            return send(channel, args);
         }
     };
 

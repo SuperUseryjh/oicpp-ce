@@ -9,8 +9,8 @@
                 await window.i18n.init();
             }
 
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const settings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const settings = await window.oicppApi.getAllSettings();
                 logInfo('启动时加载的设置:', settings);
 
                 applySettingsToUI(settings);
@@ -81,8 +81,8 @@
                 const validatedFont = window.fontDetector.validateFont(settings.font);
                 if (validatedFont !== settings.font) {
                     fontFamily = validatedFont;
-                    if (window.electronAPI && window.electronAPI.updateSettings) {
-                        window.electronAPI.updateSettings({ font: validatedFont }).catch(err => {
+                    if (window.oicppApi && window.oicppApi.updateSettings) {
+                        window.oicppApi.updateSettings({ font: validatedFont }).catch(err => {
                             logError('更新字体设置失败:', err);
                         });
                     }
@@ -227,8 +227,8 @@
     window.applySettings = applySettingsToUI;
     window.getCurrentSettings = async function () {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                return await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                return await window.oicppApi.getAllSettings();
             }
             return {};
         } catch (error) {
@@ -239,8 +239,8 @@
 
     window.updateSettings = async function (newSettings) {
         try {
-            if (window.electronAPI && window.electronAPI.updateSettings) {
-                const result = await window.electronAPI.updateSettings(newSettings);
+            if (window.oicppApi && window.oicppApi.updateSettings) {
+                const result = await window.oicppApi.updateSettings(newSettings);
                 if (result.success) {
                     logInfo('设置更新成功');
                     return true;

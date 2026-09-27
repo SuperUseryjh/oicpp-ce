@@ -78,7 +78,7 @@
         if (!indexDirty && indexedRoot === root && allFiles.length > 0) return true;
         indexedRoot = root;
         try {
-            const res = await window.electronAPI.walkDirectory(root, { excludeGlobs: ['node_modules', '.git', '.oicpp', '.vscode'] });
+            const res = await window.oicppApi.fs.walkDirectory(root, { excludeGlobs: ['node_modules', '.git', '.oicpp', '.vscode'] });
             if (res && res.success) {
                 allFiles = res.files || [];
                 indexDirty = false;
@@ -115,7 +115,7 @@
                 close();
                 return;
             }
-            const content = await window.electronAPI.readFileContent(item.path);
+            const content = await window.oicppApi.fs.readFile(item.path);
             const fileName = item.name;
             if (window.tabManager?.openFile) {
                 window.tabManager.openFile(fileName, content, false, item.path);

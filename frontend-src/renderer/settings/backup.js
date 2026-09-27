@@ -78,8 +78,8 @@ class BackupSettings {
     async loadSettings() {
         try {
             let allSettings = null;
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                allSettings = await window.oicppApi.getAllSettings();
             } else if (typeof require !== 'undefined') {
                 const { ipcRenderer } = require('electron');
                 allSettings = await ipcRenderer.invoke('get-all-settings');
@@ -111,11 +111,11 @@ class BackupSettings {
 
     async refreshLatestBackupInfo() {
         if (!this.latestInfoEl) return;
-        if (!window.electronAPI?.getSettingsBackupInfo) {
+        if (!window.oicppApi?.getSettingsBackupInfo) {
             this.updateLatestInfoText('最近备份：--');
             return;
         }
-        const result = await window.electronAPI.getSettingsBackupInfo();
+        const result = await window.oicppApi.getSettingsBackupInfo();
         if (!result || !result.success) {
             const error = result?.error || 'UNKNOWN';
             if (error === 'NOT_LOGGED_IN') {
@@ -147,8 +147,8 @@ class BackupSettings {
         try {
             const newSettings = this.collectSettings();
             let result = null;
-            if (window.electronAPI && window.electronAPI.updateSettings) {
-                result = await window.electronAPI.updateSettings(newSettings);
+            if (window.oicppApi && window.oicppApi.updateSettings) {
+                result = await window.oicppApi.updateSettings(newSettings);
             } else if (typeof require !== 'undefined') {
                 const { ipcRenderer } = require('electron');
                 result = await ipcRenderer.invoke('update-settings', newSettings);
@@ -172,12 +172,12 @@ class BackupSettings {
     }
 
     async backupNow(silent = false) {
-        if (!window.electronAPI?.backupSettingsToCloud) {
+        if (!window.oicppApi?.backupSettingsToCloud) {
             if (!silent) this.showMessage((window.i18n ? window.i18n.t('backup.backupUnavailable') : 'Backup feature is unavailable'), 'error');
             return false;
         }
 
-        const result = await window.electronAPI.backupSettingsToCloud();
+        const result = await window.oicppApi.backupSettingsToCloud();
         if (!result || !result.success) {
             const error = result?.error || 'Backup failed';
             if (error === 'NOT_LOGGED_IN') {
@@ -198,12 +198,12 @@ class BackupSettings {
     }
 
     async syncFromCloud() {
-        if (!window.electronAPI?.getSettingsBackupInfo || !window.electronAPI?.syncSettingsFromCloud) {
+        if (!window.oicppApi?.getSettingsBackupInfo || !window.oicppApi?.syncSettingsFromCloud) {
             this.showMessage((window.i18n ? window.i18n.t('backup.syncUnavailable') : 'Sync feature is unavailable'), 'error');
             return false;
         }
 
-        const infoResult = await window.electronAPI.getSettingsBackupInfo();
+        const infoResult = await window.oicppApi.getSettingsBackupInfo();
         if (!infoResult || !infoResult.success) {
             logInfo('获取云端备份信息失败:', infoResult);
             const error = infoResult?.error || 'Sync failed';
@@ -226,7 +226,7 @@ class BackupSettings {
             return false;
         }
 
-        const syncResult = await window.electronAPI.syncSettingsFromCloud();
+        const syncResult = await window.oicppApi.syncSettingsFromCloud();
         if (!syncResult || !syncResult.success) {
             const error = syncResult?.error || 'Sync failed';
             if (error === 'NOT_LOGGED_IN') {

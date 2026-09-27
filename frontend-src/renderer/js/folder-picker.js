@@ -91,7 +91,7 @@
                 createBtn.onclick = async () => {
                     const name = createInput.value.trim();
                     if (!name) return;
-                    await window.electronAPI.ensureDirectory(norm(cur, name));
+                    await window.oicppApi.fs.ensureDirectory(norm(cur, name));
                     createInput.value = '';
                     reload();
                 };
@@ -124,7 +124,7 @@
                     treeWrap.innerHTML = '<div class="folder-picker-loading">' + (window.i18n ? window.i18n.t('folderPicker.loading') : 'Loading...') + '</div>';
                     let entries = [], error = null;
                     try {
-                        entries = await window.electronAPI.readDirectory(cur);
+                        entries = await window.oicppApi.fs.readDirectory(cur);
                     } catch (e) { error = e; }
                     const folders = (entries || []).filter(i => i.type === 'folder');
                     const f = search.value.trim().toLowerCase();

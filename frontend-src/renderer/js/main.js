@@ -1,4 +1,4 @@
-﻿class OICPPApp {
+class OICPPApp {
     constructor() {
         this.currentFile = null;
         this.files = new Map();
@@ -323,14 +323,14 @@
     async initAccountMenu() {
         await this.refreshAccountState();
 
-        if (!window.electronAPI || this._accountIpcBound) {
+        if (!window.oicppApi || this._accountIpcBound) {
             return;
         }
 
         this._accountIpcBound = true;
 
-        if (typeof window.electronAPI.onIdeLoginUpdated === 'function') {
-            window.electronAPI.onIdeLoginUpdated((payload) => {
+        if (typeof window.oicppApi.onIdeLoginUpdated === 'function') {
+            window.oicppApi.onIdeLoginUpdated((payload) => {
                 this.accountLoggedIn = !!payload?.loggedIn;
                 this.accountInfo = payload?.user || null;
                 this.updateAccountMenu();
@@ -340,8 +340,8 @@
             });
         }
 
-        if (typeof window.electronAPI.onIdeLoginError === 'function') {
-            window.electronAPI.onIdeLoginError((payload) => {
+        if (typeof window.oicppApi.onIdeLoginError === 'function') {
+            window.oicppApi.onIdeLoginError((payload) => {
                 const msg = payload?.message || (window.i18n ? window.i18n.t('message.loginFailed') : '登录失败');
                 this.showMessage(msg, 'error');
             });
@@ -349,12 +349,12 @@
     }
 
     async refreshAccountState() {
-        if (!window.electronAPI || typeof window.electronAPI.getIdeLoginStatus !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.getIdeLoginStatus !== 'function') {
             this.updateAccountMenu();
             return;
         }
         try {
-            const status = await window.electronAPI.getIdeLoginStatus();
+            const status = await window.oicppApi.getIdeLoginStatus();
             this.accountLoggedIn = !!status?.loggedIn;
             this.accountInfo = status?.user || null;
             logInfo('[Account] 获取登录状态:', {
@@ -403,12 +403,12 @@
     }
 
     async startIdeLogin() {
-        if (!window.electronAPI || typeof window.electronAPI.startIdeLogin !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.startIdeLogin !== 'function') {
             this.showMessage(this.t('message.loginUnavailable', null, 'Login is unavailable'), 'error');
             return;
         }
         try {
-            const result = await window.electronAPI.startIdeLogin();
+            const result = await window.oicppApi.startIdeLogin();
             if (result && result.ok === false && result.message) {
                 this.showMessage(result.message, 'warning');
             } else {
@@ -424,32 +424,32 @@
             this.showMessage(this.t('message.loginRequired', null, 'Please log in first'), 'warning');
             return;
         }
-        if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-            window.electronAPI.openExternal('https://auth.mywwzh.top/account');
+        if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+            window.oicppApi.openExternal('https://auth.mywwzh.top/account');
         }
     }
 
     async logoutIdeAccount() {
-        if (!window.electronAPI || typeof window.electronAPI.logoutIdeAccount !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.logoutIdeAccount !== 'function') {
             this.showMessage(this.t('message.logoutUnavailable', null, 'Logout is unavailable'), 'error');
             return;
         }
         try {
-            const result = await window.electronAPI.logoutIdeAccount();
+            const result = await window.oicppApi.logoutIdeAccount();
             if (result && result.ok) {
                 this.showMessage(this.t('message.logoutSuccess', null, 'Logged out'), 'success');
             }
         } catch (error) {
             this.showMessage(this.t('message.logoutFailed', { error: error?.message || error }, `Failed to log out: ${error?.message || error}`), 'error');
         } finally {
-            if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-                try { window.electronAPI.openExternal('https://auth.mywwzh.top/logout'); } catch (_) { }
+            if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+                try { window.oicppApi.openExternal('https://auth.mywwzh.top/logout'); } catch (_) { }
             }
         }
     }
 
     openFolder() {
-        window.electronAPI.openFolder();
+        window.oicppApi.openFolder();
     }
 
     updatePlatformSpecificMenu() {
@@ -530,72 +530,72 @@
     }
 
     setupIPC() {
-        if (!window.electronAPI) {
+        if (!window.oicppApi) {
             logWarn('Electron IPC 不可用');
             return;
         }
         try {
-            window.electronAPI.onMenuSaveFile(() => {
+            window.oicppApi.onMenuSaveFile(() => {
                 this.saveCurrentFile();
             });
 
-            if (typeof window.electronAPI.onMenuNewTempFile === 'function') {
-                window.electronAPI.onMenuNewTempFile(() => {
+            if (typeof window.oicppApi.onMenuNewTempFile === 'function') {
+                window.oicppApi.onMenuNewTempFile(() => {
                     this.createNewTempFile();
                 });
             }
 
-            window.electronAPI.onMenuFormatCode(() => {
+            window.oicppApi.onMenuFormatCode(() => {
                 this.formatCode();
             });
 
-            window.electronAPI.onMenuFindReplace(() => {
+            window.oicppApi.onMenuFindReplace(() => {
                 this.showFindReplace();
             });
 
-            window.electronAPI.onMenuCompile(() => {
+            window.oicppApi.onMenuCompile(() => {
                 this.compileCode();
             });
 
-            window.electronAPI.onMenuCompileRun(() => {
+            window.oicppApi.onMenuCompileRun(() => {
                 this.compileAndRun();
             });
 
-            if (typeof window.electronAPI.onMenuOpenTerminal === 'function') {
-                window.electronAPI.onMenuOpenTerminal(() => {
+            if (typeof window.oicppApi.onMenuOpenTerminal === 'function') {
+                window.oicppApi.onMenuOpenTerminal(() => {
                     this.openIntegratedTerminal();
                 });
             }
 
-            if (typeof window.electronAPI.onMenuOpenFileHistory === 'function') {
-                window.electronAPI.onMenuOpenFileHistory(() => {
+            if (typeof window.oicppApi.onMenuOpenFileHistory === 'function') {
+                window.oicppApi.onMenuOpenFileHistory(() => {
                     this.openFileHistory();
                 });
             }
 
-            if (typeof window.electronAPI.onMenuOpenBrowser === 'function') {
-                window.electronAPI.onMenuOpenBrowser(() => {
+            if (typeof window.oicppApi.onMenuOpenBrowser === 'function') {
+                window.oicppApi.onMenuOpenBrowser(() => {
                     this.openBuiltinBrowser();
                 });
             }
 
-            if (typeof window.electronAPI.onMenuNewBrowserTab === 'function') {
-                window.electronAPI.onMenuNewBrowserTab(() => {
+            if (typeof window.oicppApi.onMenuNewBrowserTab === 'function') {
+                window.oicppApi.onMenuNewBrowserTab(() => {
                     this.openBuiltinBrowser();
                 });
             }
 
-            window.electronAPI.onMenuDebug(() => {
+            window.oicppApi.onMenuDebug(() => {
                 if (this.isDebugging) this.handleDebugContinue();
                 else this.startDebug();
             });
 
-            window.electronAPI.onShowDebugDevelopingMessage(() => {
+            window.oicppApi.onShowDebugDevelopingMessage(() => {
                 if (this.isDebugging) this.handleDebugContinue();
                 else this.startDebug();
             });
 
-            window.electronAPI.onSettingsChanged((_event, settingsType, newSettings) => {
+            window.oicppApi.onSettingsChanged((_event, settingsType, newSettings) => {
                 logInfo(`收到设置变化通知: ${settingsType}`, newSettings);
                 this.applySettings(settingsType, newSettings);
                 if (newSettings && Object.prototype.hasOwnProperty.call(newSettings, 'codeSnippets')) {
@@ -603,8 +603,8 @@
                 }
             });
             
-            if (window.electronAPI.onThemeChanged) {
-                window.electronAPI.onThemeChanged((theme) => {
+            if (window.oicppApi.onThemeChanged) {
+                window.oicppApi.onThemeChanged((theme) => {
                     logInfo('收到主题变更通知:', theme);
                     this.settings.theme = theme;
                     this.applyThemeSettings();
@@ -612,21 +612,21 @@
                 });
             }
 
-            window.electronAPI.onSettingsReset((allSettings) => {
+            window.oicppApi.onSettingsReset((allSettings) => {
                 logInfo('收到设置重置通知:', allSettings);
                 this.settings = allSettings;
                 this.applySettings();
                 try { window.monacoEditorManager?.refreshUserSnippets?.(); } catch (_) {}
             });
 
-            window.electronAPI.onSettingsImported((allSettings) => {
+            window.oicppApi.onSettingsImported((allSettings) => {
                 logInfo('收到设置导入通知:', allSettings);
                 this.settings = allSettings;
                 this.applySettings();
                 try { window.monacoEditorManager?.refreshUserSnippets?.(); } catch (_) {}
             });
 
-            window.electronAPI.onFileOpened((event, data) => {
+            window.oicppApi.onFileOpened((event, data) => {
                 try { logInfo('[渲染进程] 收到 file-opened:', { fileName: data?.fileName, filePath: data?.filePath, contentBytes: (data?.content || '').length }); } catch (_) {}
                 if (data && data.filePath !== undefined && data.content !== undefined) {
                     this.openFile(data.filePath, data.content);
@@ -635,7 +635,7 @@
                 }
             });
 
-            window.electronAPI.onFileSaved((filePath, error) => {
+            window.oicppApi.onFileSaved((filePath, error) => {
                 try { logInfo('[渲染进程] 收到 file-saved:', { filePath, error }); } catch (_) {}
                 if (error) {
                     this.showMessage(this.t('message.saveFailed', { error }, `Save failed: ${error}`), 'error');
@@ -643,11 +643,11 @@
                 this.onFileSaved(filePath);
             });
 
-            window.electronAPI.onFolderOpened((folderPath) => {
+            window.oicppApi.onFolderOpened((folderPath) => {
                 this.onFolderOpened(folderPath);
             });
 
-            window.electronAPI.onFileOpenedFromArgs((data) => {
+            window.oicppApi.onFileOpenedFromArgs((data) => {
                 logInfo('收到命令行文件打开请求:', data);
                 if (!data || !data.path) {
                     return;
@@ -689,30 +689,30 @@
                 }, 200);
             });
 
-            window.electronAPI.onApplySettingsPreview((previewSettings) => {
+            window.oicppApi.onApplySettingsPreview((previewSettings) => {
                 this.applySettings('editor', previewSettings);
             });
 
-            window.electronAPI.onSettingsApplied((finalSettings) => {;
+            window.oicppApi.onSettingsApplied((finalSettings) => {;
                 this.applySettings('editor', finalSettings);
                 this.forceRefreshEditor(); // 强制刷新以应用字体等
                 try { window.monacoEditorManager?.refreshUserSnippets?.(); } catch (_) {}
             });
 
-            if (typeof window.electronAPI.onUpdateDownloadStatus === 'function') {
-                window.electronAPI.onUpdateDownloadStatus((payload) => {
+            if (typeof window.oicppApi.onUpdateDownloadStatus === 'function') {
+                window.oicppApi.onUpdateDownloadStatus((payload) => {
                     this.applyUpdateDownloadStatus(payload || {});
                 });
             }
 
-            if (typeof window.electronAPI.getUpdateDownloadStatus === 'function') {
-                window.electronAPI.getUpdateDownloadStatus()
+            if (typeof window.oicppApi.getUpdateDownloadStatus === 'function') {
+                window.oicppApi.getUpdateDownloadStatus()
                     .then((payload) => this.applyUpdateDownloadStatus(payload || {}))
                     .catch((error) => logWarn('读取更新下载状态失败:', error?.message || error));
             }
 
-            if (typeof window.electronAPI.onAppToast === 'function') {
-                window.electronAPI.onAppToast((payload) => {
+            if (typeof window.oicppApi.onAppToast === 'function') {
+                window.oicppApi.onAppToast((payload) => {
                     if (!payload || !payload.message) {
                         return;
                     }
@@ -728,10 +728,10 @@
 
     async restoreStartupWorkspaceIfNeeded() {
         try {
-            if (!window.electronAPI || typeof window.electronAPI.consumeStartupWorkspaceToOpen !== 'function') {
+            if (!window.oicppApi || typeof window.oicppApi.consumeStartupWorkspaceToOpen !== 'function') {
                 return;
             }
-            const folderPath = await window.electronAPI.consumeStartupWorkspaceToOpen();
+            const folderPath = await window.oicppApi.consumeStartupWorkspaceToOpen();
             if (!folderPath || typeof folderPath !== 'string') {
                 return;
             }
@@ -744,8 +744,8 @@
 
     async loadSettings() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const allSettings = await window.oicppApi.getAllSettings();
                 if (allSettings) {
                     this.settings = allSettings;
                     localStorage.removeItem('oicpp-settings');
@@ -1512,13 +1512,13 @@
                     base64Data = base64Override;
                 }
 
-                if (!pdfPath && !base64Data && fallbackPaths.length > 0 && window.electronAPI?.readFileBuffer) {
+                if (!pdfPath && !base64Data && fallbackPaths.length > 0 && window.oicppApi?.readFileBuffer) {
                     for (const candidate of fallbackPaths) {
                         if (!candidate) {
                             continue;
                         }
                         try {
-                            const fetched = await window.electronAPI.readFileBuffer(candidate);
+                            const fetched = await window.oicppApi.readFileBuffer(candidate);
                             const trimmed = typeof fetched === 'string' ? fetched.trim() : '';
                             if (trimmed) {
                                 base64Data = trimmed;
@@ -1561,9 +1561,9 @@
             }
 
             let content = null;
-            if (normalizedPath && window.electronAPI?.readFileContent) {
+            if (normalizedPath && window.oicppApi?.readFileContent) {
                 try {
-                    content = await window.electronAPI.readFileContent(normalizedPath);
+                    content = await window.oicppApi.readFileContent(normalizedPath);
                 } catch (error) {
                     logWarn('通过文件路径读取拖拽内容失败，准备使用浏览器接口:', error);
                     content = null;
@@ -1588,8 +1588,8 @@
                 this.editorManager.openFile(fileName, fallbackContent ?? '');
                 logInfo('通过备用方案打开拖拽的文件:', fileName);
             }
-        } else if (normalizedPath && this.editorManager && window.electronAPI?.readFileContent) {
-            const fallbackContent = await window.electronAPI.readFileContent(normalizedPath);
+        } else if (normalizedPath && this.editorManager && window.oicppApi?.readFileContent) {
+            const fallbackContent = await window.oicppApi.readFileContent(normalizedPath);
             this.editorManager.openFile(fileName, fallbackContent ?? '');
             logInfo('通过备用方案打开拖拽的文件:', fileName);
         } else if (this.editorManager) {
@@ -1606,7 +1606,7 @@
     }
 
     async checkFileExistsSafe(filePath) {
-        if (!filePath || !window.electronAPI?.checkFileExists) {
+        if (!filePath || !window.oicppApi?.checkFileExists) {
             return false;
         }
         try {
@@ -1614,7 +1614,7 @@
             if (!safePath) {
                 return false;
             }
-            return await window.electronAPI.checkFileExists(safePath);
+            return await window.oicppApi.checkFileExists(safePath);
         } catch (error) {
             logWarn('检查文件存在性失败:', error);
             return false;
@@ -1660,7 +1660,7 @@
     }
 
     async tryPersistPdfToTemp(fileName, base64Data) {
-        if (!window.electronAPI?.saveBinaryTempFile) {
+        if (!window.oicppApi?.saveBinaryTempFile) {
             return null;
         }
         const sanitizedData = typeof base64Data === 'string' ? base64Data.trim() : '';
@@ -1668,7 +1668,7 @@
             return null;
         }
         try {
-            const tempPath = await window.electronAPI.saveBinaryTempFile(fileName, sanitizedData);
+            const tempPath = await window.oicppApi.saveBinaryTempFile(fileName, sanitizedData);
             if (tempPath) {
                 const normalizedTemp = this.normalizeFilePathCandidate(tempPath);
                 return { filePath: normalizedTemp || tempPath, isTempFile: true };
@@ -1866,15 +1866,15 @@
     }
 
     async createNewTempFile() {
-        if (!window.electronAPI?.saveTempFile) {
+        if (!window.oicppApi?.saveTempFile) {
             this.showMessage(this.t('message.tempFileUnavailable', null, 'Temporary files are unavailable'), 'error');
             return;
         }
 
         try {
             let content = '';
-            if (window.electronAPI?.getAllSettings) {
-                const allSettings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi?.getAllSettings) {
+                const allSettings = await window.oicppApi.getAllSettings();
                 if (allSettings?.cppTemplate && typeof allSettings.cppTemplate === 'string') {
                     content = allSettings.cppTemplate.endsWith('\n')
                         ? allSettings.cppTemplate
@@ -1883,7 +1883,7 @@
             }
 
             const fileName = this.generateTempCppFileName();
-            const tempPath = await window.electronAPI.saveTempFile(fileName, content);
+            const tempPath = await window.oicppApi.saveTempFile(fileName, content);
             if (!tempPath || typeof tempPath !== 'string') {
                 throw new Error('主进程未返回临时文件路径');
             }
@@ -1918,8 +1918,8 @@
             return;
         }
 
-        if (window.electronAPI) {
-            window.electronAPI.openFile();
+        if (window.oicppApi) {
+            window.oicppApi.openFile();
         } else {
             const input = document.createElement('input');
             input.type = 'file';
@@ -1945,8 +1945,8 @@
     if (isLinux && window.folderPicker) {
             window.folderPicker.show({ startPath: this.settings.lastOpen || '/' }).then(sel => {
                 if (sel) {
-                    if (window.electronAPI) {
-            window.electronAPI.openRecentFile ? window.electronAPI.openRecentFile(sel) : this.onFolderOpened(sel);
+                    if (window.oicppApi) {
+            window.oicppApi.openRecentFile ? window.oicppApi.openRecentFile(sel) : this.onFolderOpened(sel);
                     } else {
                         this.onFolderOpened(sel);
                     }
@@ -1954,7 +1954,7 @@
             });
             return;
         }
-        if (window.electronAPI) return window.electronAPI.openFolder();
+        if (window.oicppApi) return window.oicppApi.openFolder();
         alert('打开文件夹功能需要在 Electron 环境中运行');
     }
 
@@ -2090,8 +2090,8 @@
         if (terminalId && this.terminalPanel) {
             // 先尝试通过 IPC 写入 PTY
             try {
-                if (window.electronAPI && typeof window.electronAPI.writeTerminal === 'function') {
-                    window.electronAPI.writeTerminal(terminalId, '\n');
+                if (window.oicppApi && typeof window.oicppApi.writeTerminal === 'function') {
+                    window.oicppApi.writeTerminal(terminalId, '\n');
                 }
             } catch (_) { }
             // 同时直接写入 xterm.js 显示层，确保用户能看到换行
@@ -2148,7 +2148,7 @@
         if (!this.isUnixLikePlatform()) {
             return null;
         }
-        if (!terminalId || !window.electronAPI || typeof window.electronAPI.getTerminalTTY !== 'function') {
+        if (!terminalId || !window.oicppApi || typeof window.oicppApi.getTerminalTTY !== 'function') {
             return null;
         }
 
@@ -2156,7 +2156,7 @@
         let lastResult = null;
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
             try {
-                const result = await window.electronAPI.getTerminalTTY(terminalId);
+                const result = await window.oicppApi.getTerminalTTY(terminalId);
                 lastResult = result || null;
                 const tty = String(result?.tty || '').trim();
                 if (tty) {
@@ -2188,7 +2188,7 @@
                             this.editorManager.currentEditor.getFilePath() : null;
             
             logInfo('保存文件 - 文件路径:', filePath, '内容长度:', content ? content.length : 'undefined');
-            if (window.electronAPI) {
+            if (window.oicppApi) {
                 if (filePath) {
                     if (this.isCloudFilePath(String(filePath))) {
                         const ok = await this.saveCloudFileToServer(filePath, content);
@@ -2199,7 +2199,7 @@
                     }
                     logInfo('调用 electronAPI.saveFile 保存到:', filePath);
                     try {
-                        await window.electronAPI.saveFile(filePath, content);
+                        await window.oicppApi.saveFile(filePath, content);
                         if (window.tabManager) {
                             if (window.tabManager.markTabAsSavedByUniqueKey) {
                                 window.tabManager.markTabAsSavedByUniqueKey(filePath.replace(/\\/g, '/'));
@@ -2214,7 +2214,7 @@
                 } else {
                     logInfo('调用 electronAPI.saveAsFile 另存为新文件');
                     try {
-                        const newPath = await window.electronAPI.saveAsFile(content);
+                        const newPath = await window.oicppApi.saveAsFile(content);
                         if (newPath) {
                             try {
                                 const ed = this.editorManager.currentEditor;
@@ -2252,8 +2252,8 @@
     saveFileAs() {
         if (this.editorManager && this.editorManager.currentEditor) {
             const content = this.editorManager.currentEditor.getValue();
-            if (window.electronAPI) {
-                window.electronAPI.saveAsFile(content);
+            if (window.oicppApi) {
+                window.oicppApi.saveAsFile(content);
             } else {
                 this.saveFile(); // 浏览器环境下等同于保存
             }
@@ -2267,7 +2267,7 @@
             const filePath = this.editorManager.currentEditor.getFilePath ? 
                             this.editorManager.currentEditor.getFilePath() : null;
             
-            if (window.electronAPI && filePath && content !== null) {
+            if (window.oicppApi && filePath && content !== null) {
                 try {
                     if (this.isCloudFilePath(String(filePath))) {
                         const ok = await this.saveCloudFileToServer(filePath, content);
@@ -2276,7 +2276,7 @@
                         }
                         return;
                     }
-                    await window.electronAPI.saveFile(filePath, content);
+                    await window.oicppApi.saveFile(filePath, content);
                     if (window.tabManager) {
                         if (window.tabManager.markTabAsSavedByUniqueKey) {
                             window.tabManager.markTabAsSavedByUniqueKey(filePath.replace(/\\/g, '/'));
@@ -2303,8 +2303,8 @@
     }
 
     openCompilerSettings() {
-        if (window.electronAPI && window.electronAPI.openCompilerSettings) {
-            window.electronAPI.openCompilerSettings();
+        if (window.oicppApi && window.oicppApi.openCompilerSettings) {
+            window.oicppApi.openCompilerSettings();
         } else if (typeof require !== 'undefined') {
             try {
                 const { ipcRenderer } = require('electron');
@@ -2321,12 +2321,12 @@
 
     async openEditorSettings() {
         logInfo('=== openEditorSettings 被调用 ===');
-        logInfo('electronAPI 可用性:', !!window.electronAPI);
-        logInfo('openEditorSettings 方法可用性:', !!(window.electronAPI && window.electronAPI.openEditorSettings));
+        logInfo('electronAPI 可用性:', !!window.oicppApi);
+        logInfo('openEditorSettings 方法可用性:', !!(window.oicppApi && window.oicppApi.openEditorSettings));
         
-        if (window.electronAPI && window.electronAPI.openEditorSettings) {
+        if (window.oicppApi && window.oicppApi.openEditorSettings) {
             logInfo('使用 electronAPI.openEditorSettings');
-            window.electronAPI.openEditorSettings();
+            window.oicppApi.openEditorSettings();
         } else if (typeof require !== 'undefined') {
             logInfo('使用 ipcRenderer.send');
             const { ipcRenderer } = require('electron');
@@ -2356,8 +2356,8 @@
     }
 
     openTemplateSettings() {
-        if (window.electronAPI && window.electronAPI.openTemplateSettings) {
-            window.electronAPI.openTemplateSettings();
+        if (window.oicppApi && window.oicppApi.openTemplateSettings) {
+            window.oicppApi.openTemplateSettings();
         } else if (typeof require !== 'undefined') {
             const { ipcRenderer } = require('electron');
             ipcRenderer.send('open-template-settings');
@@ -2367,8 +2367,8 @@
     }
 
     openBackupSettings() {
-        if (window.electronAPI && window.electronAPI.openBackupSettings) {
-            window.electronAPI.openBackupSettings();
+        if (window.oicppApi && window.oicppApi.openBackupSettings) {
+            window.oicppApi.openBackupSettings();
         } else if (typeof require !== 'undefined') {
             const { ipcRenderer } = require('electron');
             ipcRenderer.invoke('open-backup-settings').catch(error => {
@@ -3440,18 +3440,18 @@ ${data.message || '程序已加载，等待开始执行'}
     }
 
     async uploadClientLogFromMenu() {
-        if (!window.electronAPI) {
+        if (!window.oicppApi) {
             this.showMessage(this.t('feedback.logUnavailable', null, 'Log upload is unavailable'), 'error');
             return;
         }
 
-        if (typeof window.electronAPI.listClientLogs !== 'function' || typeof window.electronAPI.uploadClientLog !== 'function') {
+        if (typeof window.oicppApi.listClientLogs !== 'function' || typeof window.oicppApi.uploadClientLog !== 'function') {
             this.showMessage(this.t('feedback.logUnsupported', null, 'This version does not support log upload'), 'error');
             return;
         }
 
         try {
-            const listResult = await window.electronAPI.listClientLogs();
+            const listResult = await window.oicppApi.listClientLogs();
             if (!listResult || listResult.success !== true) {
                 this.showMessage(listResult?.message || this.t('feedback.logListFailed', null, 'Failed to read the log list'), 'error');
                 return;
@@ -3554,7 +3554,7 @@ ${data.message || '程序已加载，等待开始执行'}
 
                 try {
                     this.showMessage(t('feedback.uploadingLog', null, 'Uploading log, please wait...'), 'info');
-                    const result = await window.electronAPI.uploadClientLog(logPath);
+                    const result = await window.oicppApi.uploadClientLog(logPath);
                     if (!result || result.success !== true) {
                         this.showMessage(result?.message || t('feedback.logUploadFailed', { error: '' }, 'Log upload failed'), 'error');
                         return;
@@ -3625,8 +3625,8 @@ ${data.message || '程序已加载，等待开始执行'}
         if (copyBtn) {
             copyBtn.addEventListener('click', async () => {
                 try {
-                    if (window.electronAPI && typeof window.electronAPI.clipboardWriteText === 'function') {
-                        await window.electronAPI.clipboardWriteText(safeTraceCode);
+                    if (window.oicppApi && typeof window.oicppApi.clipboardWriteText === 'function') {
+                        await window.oicppApi.clipboardWriteText(safeTraceCode);
                         this.showMessage(t('feedback.traceCodeCopied', null, 'Trace code copied'), 'success');
                     } else {
                         this.showMessage(t('feedback.copyUnavailable', null, 'Copy is unavailable; please copy the trace code manually'), 'warning');
@@ -3643,8 +3643,8 @@ ${data.message || '程序已加载，等待开始执行'}
             openIssueBtn.addEventListener('click', async () => {
                 const url = 'https://github.com/mywwzh/oicpp/issues';
                 try {
-                    if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-                        await window.electronAPI.openExternal(url);
+                    if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+                        await window.oicppApi.openExternal(url);
                     }
                 } catch (error) {
                     logWarn('打开反馈页失败:', error);
@@ -3657,8 +3657,8 @@ ${data.message || '程序已加载，等待开始执行'}
 
     async setFeedbackDialogIcon() {
         try {
-            if (window.electronAPI && window.electronAPI.getUserIconPath) {
-                const iconPath = await window.electronAPI.getUserIconPath();
+            if (window.oicppApi && window.oicppApi.getUserIconPath) {
+                const iconPath = await window.oicppApi.getUserIconPath();
                 const iconElement = document.querySelector('#feedback-dialog-icon');
                 if (iconElement && iconPath) {
                     iconElement.src = iconPath;
@@ -3690,8 +3690,8 @@ ${data.message || '程序已加载，等待开始执行'}
                 logInfo('[主进程] 检查 window.electron.shell:', typeof window.electron?.shell);
                 logInfo('[主进程] 检查 window.electron.shell.openExternal:', typeof window.electron?.shell?.openExternal);
 
-                if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
-                    await window.electronAPI.openExternal(url);
+                if (window.oicppApi && typeof window.oicppApi.openExternal === 'function') {
+                    await window.oicppApi.openExternal(url);
                 } else if (window.electron && window.electron.shell && typeof window.electron.shell.openExternal === 'function') {
                     window.electron.shell.openExternal(url);
                 } else if (typeof window.open === 'function') {
@@ -3713,7 +3713,7 @@ ${data.message || '程序已加载，等待开始执行'}
         const fallbackBuildInfo = { version: '1.5.4 (v49)', buildTime: '未知', author: 'mywwzh' };
         let buildInfo = { ...fallbackBuildInfo };
         try {
-            const buildInfoData = window.electronAPI ? await window.electronAPI.getBuildInfo() : null;
+            const buildInfoData = window.oicppApi ? await window.oicppApi.getBuildInfo() : null;
             if (buildInfoData) {
                 buildInfo = buildInfoData;
             }
@@ -3866,7 +3866,7 @@ ${data.message || '程序已加载，等待开始执行'}
 
     async setAboutDialogIcon() {
         try {
-            const userIconPath = await window.electronAPI.getUserIconPath();
+            const userIconPath = await window.oicppApi.getUserIconPath();
             const aboutIcon = document.getElementById('about-dialog-icon');
             if (aboutIcon) {
                 aboutIcon.src = userIconPath;
@@ -3878,7 +3878,7 @@ ${data.message || '程序已加载，等待开始执行'}
 
     async setAppIcon() {
         try {
-            const userIconPath = await window.electronAPI.getUserIconPath();
+            const userIconPath = await window.oicppApi.getUserIconPath();
             const appIcon = document.getElementById('app-icon');
             if (appIcon) {
                 appIcon.src = userIconPath;
@@ -4290,9 +4290,9 @@ ${data.message || '程序已加载，等待开始执行'}
                 } else if (typeof filePath === 'string') {
                     actualPath = filePath;
                 }
-                if (actualPath && !isNew && window.electronAPI && typeof window.electronAPI.addToFileHistory === 'function') {
+                if (actualPath && !isNew && window.oicppApi && typeof window.oicppApi.addToFileHistory === 'function') {
                     try {
-                        await window.electronAPI.addToFileHistory(actualPath);
+                        await window.oicppApi.addToFileHistory(actualPath);
                     } catch (_) {}
                 }
                 debouncedSave();
@@ -4326,12 +4326,12 @@ ${data.message || '程序已加载，等待开始执行'}
     }
 
     async openFileHistory() {
-        if (!window.electronAPI || typeof window.electronAPI.getFileHistory !== 'function') {
+        if (!window.oicppApi || typeof window.oicppApi.getFileHistory !== 'function') {
             this.showMessage(this.t('message.fileHistoryUnavailable', null, 'File history is unavailable'), 'error');
             return;
         }
         try {
-            const history = await window.electronAPI.getFileHistory();
+            const history = await window.oicppApi.getFileHistory();
             this.showFileHistoryDialog(Array.isArray(history) ? history : []);
         } catch (error) {
             logError('获取文件历史失败:', error);
@@ -4422,7 +4422,7 @@ ${data.message || '程序已加载，等待开始执行'}
 
                 row.addEventListener('click', async () => {
                     overlay.remove();
-                    await window.electronAPI.openFileFromHistory(item.path);
+                    await window.oicppApi.openFileFromHistory(item.path);
                 });
 
                 listContainer.appendChild(row);
@@ -4446,7 +4446,7 @@ ${data.message || '程序已加载，等待开始执行'}
                     const confirmed = await window.dialogManager.showConfirm('确定要清除所有文件历史记录吗？');
                     if (!confirmed) return;
                 }
-                await window.electronAPI.clearFileHistory();
+                await window.oicppApi.clearFileHistory();
                 overlay.remove();
                 this.showMessage(this.t('message.fileHistoryCleared', null, 'File history cleared'), 'success');
             });
@@ -4495,7 +4495,7 @@ ${data.message || '程序已加载，等待开始执行'}
     // ========== 自动恢复标签页 ==========
 
     async saveCurrentOpenTabs() {
-        if (!window.electronAPI || typeof window.electronAPI.saveLastOpenTabs !== 'function') return;
+        if (!window.oicppApi || typeof window.oicppApi.saveLastOpenTabs !== 'function') return;
         try {
             if (!window.tabManager) return;
             const tabs = [];
@@ -4510,7 +4510,7 @@ ${data.message || '程序已加载，等待开始执行'}
                 }
             }
             if (tabs.length > 0) {
-                await window.electronAPI.saveLastOpenTabs(tabs);
+                await window.oicppApi.saveLastOpenTabs(tabs);
             }
         } catch (err) {
             logWarn('保存打开标签页失败:', err);
@@ -4518,16 +4518,16 @@ ${data.message || '程序已加载，等待开始执行'}
     }
 
     async restoreLastOpenTabs() {
-        if (!window.electronAPI || typeof window.electronAPI.getLastOpenTabs !== 'function') return;
+        if (!window.oicppApi || typeof window.oicppApi.getLastOpenTabs !== 'function') return;
         try {
-            const tabs = await window.electronAPI.getLastOpenTabs();
+            const tabs = await window.oicppApi.getLastOpenTabs();
             if (!Array.isArray(tabs) || tabs.length === 0) return;
 
             logInfo(`[自动恢复] 正在恢复 ${tabs.length} 个标签页`);
             for (const tab of tabs) {
                 if (!tab || !tab.filePath) continue;
                 try {
-                    const content = await window.electronAPI.readFileContent(tab.filePath);
+                    const content = await window.oicppApi.readFileContent(tab.filePath);
                     if (typeof content === 'string') {
                         const fileName = tab.fileName || tab.filePath.split(/[\\/]/).pop() || 'untitled';
                         if (window.tabManager && typeof window.tabManager.openFile === 'function') {

@@ -50,7 +50,7 @@ class CodeComparer {
     async promptMissingPythonInterpreter(task) {
         this.showTaskCompileError(task, 'settings', window.i18n ? window.i18n.t('compare.setPythonFirst') : 'Please set the Python interpreter path first');
         try {
-            await window.electronAPI?.openCompilerSettings?.();
+            await window.oicppApi?.openCompilerSettings?.();
         } catch (error) {
             logWarn('打开编译器设置失败:', error);
         }
@@ -196,8 +196,8 @@ class CodeComparer {
 
     async checkCompilerAndUpdate() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const settings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const settings = await window.oicppApi.getAllSettings();
                 const hasCompiler = settings && settings.compilerPath;
 
                 const noCompilerMessage = document.getElementById('no-compiler-message');
@@ -348,7 +348,7 @@ class CodeComparer {
 
     async browseStandardCode() {
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('compare.selectStdCode') : 'Select Standard/Brute Force Code File',
                 filters: [
                     { name: window.i18n ? window.i18n.t('compare.cppFilter') : 'C++ Files', extensions: ['cpp', 'cc', 'cxx', 'c'] },
@@ -378,7 +378,7 @@ class CodeComparer {
                 this.syncInstanceConfigToTask(prevTask);
             }
 
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('compare.selectTestCode') : 'Select Code to Compare',
                 filters: [
                     { name: window.i18n ? window.i18n.t('compare.cppFilter') : 'C++ Files', extensions: ['cpp', 'cc', 'cxx', 'c'] },
@@ -418,7 +418,7 @@ class CodeComparer {
 
     async browseGenerator() {
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('compare.selectGenerator') : 'Select Data Generator File',
                 filters: [
                     { name: window.i18n ? window.i18n.t('compare.genFilter') : 'Generator Files', extensions: ['cpp', 'cc', 'cxx', 'c', 'py'] },
@@ -443,7 +443,7 @@ class CodeComparer {
 
     async browseSpjFile() {
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: window.i18n ? window.i18n.t('compare.selectSpjFile') : 'Select Special Judge File',
                 filters: [
                     { name: window.i18n ? window.i18n.t('compare.cppFilter') : 'C++ Files', extensions: ['cpp', 'cc', 'cxx', 'c'] },
@@ -565,7 +565,7 @@ class CodeComparer {
         logInfo('数据生成器:', task.config.generatorPath);
 
         try {
-            const settings = await window.electronAPI.getAllSettings();
+            const settings = await window.oicppApi.getAllSettings();
             if (!settings || !settings.compilerPath) {
                 this.showTaskCompileError(task, 'general', window.i18n ? window.i18n.t('compare.setCompilerFirst') : 'Please set the compiler path first');
                 return;
@@ -642,36 +642,36 @@ class CodeComparer {
 
     async compilePrograms(task) {
         try {
-            const settings = await window.electronAPI.getAllSettings();
+            const settings = await window.oicppApi.getAllSettings();
             const compilerPath = settings.compilerPath;
             let compilerArgs = settings.compilerArgs || '-std=c++14 -O2';
 
             if (task.config.useTestlib) {
-                const compilerDir = await window.electronAPI.pathDirname(compilerPath);
-                const testlibIncludePath = await window.electronAPI.pathJoin(compilerDir, '..', 'include');
+                const compilerDir = await window.oicppApi.pathDirname(compilerPath);
+                const testlibIncludePath = await window.oicppApi.pathJoin(compilerDir, '..', 'include');
                 compilerArgs += ` -I"${testlibIncludePath}"`;
             }
 
-            const homeDir = await window.electronAPI.getHomeDir();
-            const tempDir = await window.electronAPI.pathJoin(homeDir, '.oicpp', 'compare');
+            const homeDir = await window.oicppApi.getHomeDir();
+            const tempDir = await window.oicppApi.pathJoin(homeDir, '.oicpp', 'compare');
 
-            await window.electronAPI.ensureDir(tempDir);
+            await window.oicppApi.ensureDir(tempDir);
 
             const timestamp = Date.now();
             const isWin = (typeof window !== 'undefined' && window.process && window.process.platform === 'win32');
             const exeSuffix = isWin ? '.exe' : '';
-            const stdExe = await window.electronAPI.pathJoin(tempDir, `std_${timestamp}${exeSuffix}`);
-            const testExe = await window.electronAPI.pathJoin(tempDir, `test_${timestamp}${exeSuffix}`);
+            const stdExe = await window.oicppApi.pathJoin(tempDir, `std_${timestamp}${exeSuffix}`);
+            const testExe = await window.oicppApi.pathJoin(tempDir, `test_${timestamp}${exeSuffix}`);
             let generatorExe = null;
             let generatorRunTarget = null;
 
             this.updateTaskStatus(task, window.i18n ? window.i18n.t('compare.compileStd') : 'Compiling standard program...');
-            const stdResult = await window.electronAPI.compileFile({
+            const stdResult = await window.oicppApi.compileFile({
                 inputFile: task.config.standardCodePath,
                 outputFile: stdExe,
                 compilerPath: compilerPath,
                 compilerArgs: compilerArgs,
-                workingDirectory: await window.electronAPI.pathDirname(task.config.standardCodePath)
+                workingDirectory: await window.oicppApi.pathDirname(task.config.standardCodePath)
             });
 
             if (!stdResult.success) {
@@ -680,12 +680,12 @@ class CodeComparer {
             }
 
             this.updateTaskStatus(task, window.i18n ? window.i18n.t('compare.compileTest') : 'Compiling test program...');
-            const testResult = await window.electronAPI.compileFile({
+            const testResult = await window.oicppApi.compileFile({
                 inputFile: task.config.testCodePath,
                 outputFile: testExe,
                 compilerPath: compilerPath,
                 compilerArgs: compilerArgs,
-                workingDirectory: await window.electronAPI.pathDirname(task.config.testCodePath)
+                workingDirectory: await window.oicppApi.pathDirname(task.config.testCodePath)
             });
 
             if (!testResult.success) {
@@ -700,11 +700,11 @@ class CodeComparer {
                     await this.promptMissingPythonInterpreter(task);
                     return null;
                 }
-                const interpreterExists = await window.electronAPI.checkFileExists(interpreterPath);
+                const interpreterExists = await window.oicppApi.checkFileExists(interpreterPath);
                 if (!interpreterExists) {
                     this.showTaskCompileError(task, 'settings', window.i18n ? window.i18n.t('compare.pythonPathInvalid') : 'Python interpreter path is invalid. Please reconfigure.');
                     try {
-                        await window.electronAPI?.openCompilerSettings?.();
+                        await window.oicppApi?.openCompilerSettings?.();
                     } catch (_) { }
                     return null;
                 }
@@ -713,17 +713,17 @@ class CodeComparer {
                 generatorRunTarget = {
                     executablePath: interpreterPath,
                     args: [task.config.generatorPath],
-                    workingDirectory: await window.electronAPI.pathDirname(task.config.generatorPath)
+                    workingDirectory: await window.oicppApi.pathDirname(task.config.generatorPath)
                 };
             } else {
-                generatorExe = await window.electronAPI.pathJoin(tempDir, `generator_${timestamp}${exeSuffix}`);
+                generatorExe = await window.oicppApi.pathJoin(tempDir, `generator_${timestamp}${exeSuffix}`);
                 this.updateTaskStatus(task, window.i18n ? window.i18n.t('compare.compileGen') : 'Compiling data generator...');
-                const generatorResult = await window.electronAPI.compileFile({
+                const generatorResult = await window.oicppApi.compileFile({
                     inputFile: task.config.generatorPath,
                     outputFile: generatorExe,
                     compilerPath: compilerPath,
                     compilerArgs: compilerArgs,
-                    workingDirectory: await window.electronAPI.pathDirname(task.config.generatorPath)
+                    workingDirectory: await window.oicppApi.pathDirname(task.config.generatorPath)
                 });
 
                 if (!generatorResult.success) {
@@ -737,29 +737,29 @@ class CodeComparer {
 
             if (task.config.useTestlib && task.config.spjPath) {
                 this.updateTaskStatus(task, window.i18n ? window.i18n.t('compare.compileSpj') : 'Compiling Special Judge...');
-                spjExe = await window.electronAPI.pathJoin(tempDir, `spj_${timestamp}${exeSuffix}`);
+                spjExe = await window.oicppApi.pathJoin(tempDir, `spj_${timestamp}${exeSuffix}`);
 
                 let spjCompilerArgs = compilerArgs;
 
 
                 if (settings.testlibPath) {
-                    const testlibPathInfo = await window.electronAPI.getPathInfo(settings.testlibPath);
+                    const testlibPathInfo = await window.oicppApi.getPathInfo(settings.testlibPath);
                     const testlibIncludePath = testlibPathInfo.dirname;
                     spjCompilerArgs += ` -I"${testlibIncludePath}"`;
                 } else {
-                    const pathInfo = await window.electronAPI.getPathInfo(compilerPath);
-                    const testlibIncludePath = await window.electronAPI.pathJoin(pathInfo.dirname, '..', 'include');
+                    const pathInfo = await window.oicppApi.getPathInfo(compilerPath);
+                    const testlibIncludePath = await window.oicppApi.pathJoin(pathInfo.dirname, '..', 'include');
                     spjCompilerArgs += ` -I"${testlibIncludePath}"`;
                 }
 
 
 
-                const spjResult = await window.electronAPI.compileFile({
+                const spjResult = await window.oicppApi.compileFile({
                     inputFile: task.config.spjPath,
                     outputFile: spjExe,
                     compilerPath: compilerPath,
                     compilerArgs: spjCompilerArgs,
-                    workingDirectory: await window.electronAPI.pathDirname(task.config.spjPath)
+                    workingDirectory: await window.oicppApi.pathDirname(task.config.spjPath)
                 });
 
                 if (!spjResult.success) {
@@ -1080,7 +1080,7 @@ class CodeComparer {
         const execOptions = typeof executablePath === 'object'
             ? { ...executablePath, skipPreKill: true }
             : { executablePath, skipPreKill: true };
-        const result = await window.electronAPI.runProgram(execOptions, input, timeLimit);
+        const result = await window.oicppApi.runProgram(execOptions, input, timeLimit);
         const trimmedOutput = (result.output || '').trim();
         const outputLimitExceeded = !!result.outputLimitExceeded;
         let errorMessage = '';
@@ -1128,26 +1128,26 @@ class CodeComparer {
             };
         }
 
-        const homeDir = await window.electronAPI.getHomeDir();
+        const homeDir = await window.oicppApi.getHomeDir();
         const taskDirName = this.buildFreopenTaskDirName(task?.key || 'task');
-        const baseDir = await window.electronAPI.pathJoin(homeDir, '.oicpp', 'compare', 'freopen_runs', taskDirName);
+        const baseDir = await window.oicppApi.pathJoin(homeDir, '.oicpp', 'compare', 'freopen_runs', taskDirName);
         const runDirName = `${role || 'program'}_${caseIndex || 0}`;
-        const runDir = await window.electronAPI.pathJoin(baseDir, runDirName);
+        const runDir = await window.oicppApi.pathJoin(baseDir, runDirName);
 
-        await window.electronAPI.ensureDir(baseDir);
-        await window.electronAPI.ensureDir(runDir);
+        await window.oicppApi.ensureDir(baseDir);
+        await window.oicppApi.ensureDir(runDir);
 
         const cleanupFiles = [];
         let outputFilePath = null;
 
         if (inputFileName) {
-            const inputFilePath = await window.electronAPI.pathJoin(runDir, inputFileName);
-            await window.electronAPI.writeFile(inputFilePath, inputData || '');
+            const inputFilePath = await window.oicppApi.pathJoin(runDir, inputFileName);
+            await window.oicppApi.writeFile(inputFilePath, inputData || '');
             cleanupFiles.push(inputFilePath);
         }
 
         if (outputFileName) {
-            outputFilePath = await window.electronAPI.pathJoin(runDir, outputFileName);
+            outputFilePath = await window.oicppApi.pathJoin(runDir, outputFileName);
             cleanupFiles.push(outputFilePath);
         }
 
@@ -1163,9 +1163,9 @@ class CodeComparer {
         if (!context || !Array.isArray(context.cleanupFiles)) return;
         for (const filePath of context.cleanupFiles) {
             try {
-                const exists = await window.electronAPI.checkFileExists(filePath);
+                const exists = await window.oicppApi.checkFileExists(filePath);
                 if (exists) {
-                    await window.electronAPI.deleteFile(filePath);
+                    await window.oicppApi.deleteFile(filePath);
                 }
             } catch (_) { }
         }
@@ -1177,11 +1177,11 @@ class CodeComparer {
         }
 
         try {
-            const exists = await window.electronAPI.checkFileExists(freopenContext.outputFilePath);
+            const exists = await window.oicppApi.checkFileExists(freopenContext.outputFilePath);
             if (!exists) {
                 return stdoutOutput || '';
             }
-            const output = await window.electronAPI.readFileContent(freopenContext.outputFilePath);
+            const output = await window.oicppApi.readFileContent(freopenContext.outputFilePath);
             return String(output || '').trim();
         } catch (_) {
             return stdoutOutput || '';
@@ -1205,12 +1205,12 @@ class CodeComparer {
     async judgeWithSpj(spjExecutablePath, inputData, actualOutput, expectedOutput, timeLimit) {
         try {
             const timestamp = Date.now();
-            const inputFile = await window.electronAPI.saveTempFile(`spj_input_${timestamp}.txt`, inputData);
-            const actualFile = await window.electronAPI.saveTempFile(`spj_actual_${timestamp}.txt`, actualOutput);
-            const expectedFile = await window.electronAPI.saveTempFile(`spj_expected_${timestamp}.txt`, expectedOutput);
+            const inputFile = await window.oicppApi.saveTempFile(`spj_input_${timestamp}.txt`, inputData);
+            const actualFile = await window.oicppApi.saveTempFile(`spj_actual_${timestamp}.txt`, actualOutput);
+            const expectedFile = await window.oicppApi.saveTempFile(`spj_expected_${timestamp}.txt`, expectedOutput);
 
             try {
-                const workingDir = await window.electronAPI.pathDirname(spjExecutablePath);
+                const workingDir = await window.oicppApi.pathDirname(spjExecutablePath);
                 const spjParams = {
                     executablePath: spjExecutablePath,
                     args: [inputFile, actualFile, expectedFile],
@@ -1219,7 +1219,7 @@ class CodeComparer {
                     skipPreKill: true
                 };
 
-                const spjResult = await window.electronAPI.runProgram(spjParams);
+                const spjResult = await window.oicppApi.runProgram(spjParams);
 
                 if (spjResult.outputLimitExceeded) {
                     return 'OLE';
@@ -1231,9 +1231,9 @@ class CodeComparer {
                     return 'WA';
                 }
             } finally {
-                await window.electronAPI.deleteTempFile(inputFile);
-                await window.electronAPI.deleteTempFile(actualFile);
-                await window.electronAPI.deleteTempFile(expectedFile);
+                await window.oicppApi.deleteTempFile(inputFile);
+                await window.oicppApi.deleteTempFile(actualFile);
+                await window.oicppApi.deleteTempFile(expectedFile);
             }
         } catch (error) {
             return 'SPJ Error';
@@ -1244,7 +1244,7 @@ class CodeComparer {
         const fallbackThreads = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : 2;
         let cpuThreads = fallbackThreads;
         try {
-            const remoteCount = await window.electronAPI?.getCpuThreads?.();
+            const remoteCount = await window.oicppApi?.getCpuThreads?.();
             if (Number.isFinite(remoteCount) && remoteCount > 0) {
                 cpuThreads = remoteCount;
             }
@@ -1948,7 +1948,7 @@ class CodeComparer {
         }
 
         try {
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title: '选择导出目录',
                 defaultPath: 'test_data',
                 properties: ['openDirectory', 'createDirectory']
@@ -1957,15 +1957,15 @@ class CodeComparer {
             if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
                 const exportDir = result.filePaths[0];
 
-                await window.electronAPI.ensureDir(exportDir);
+                await window.oicppApi.ensureDir(exportDir);
 
-                const inputFile = await window.electronAPI.pathJoin(exportDir, 'input.in');
-                const stdOutputFile = await window.electronAPI.pathJoin(exportDir, 'std_or_force_output.out');
-                const testOutputFile = await window.electronAPI.pathJoin(exportDir, 'code_output.out');
+                const inputFile = await window.oicppApi.pathJoin(exportDir, 'input.in');
+                const stdOutputFile = await window.oicppApi.pathJoin(exportDir, 'std_or_force_output.out');
+                const testOutputFile = await window.oicppApi.pathJoin(exportDir, 'code_output.out');
 
-                await window.electronAPI.createFile(inputFile, errorResult.input);
-                await window.electronAPI.createFile(stdOutputFile, errorResult.stdOutput);
-                await window.electronAPI.createFile(testOutputFile, errorResult.testOutput);
+                await window.oicppApi.createFile(inputFile, errorResult.input);
+                await window.oicppApi.createFile(stdOutputFile, errorResult.stdOutput);
+                await window.oicppApi.createFile(testOutputFile, errorResult.testOutput);
 
                 this.showSuccessMessage(`测试数据已导出到: ${exportDir}`);
             }
@@ -1985,7 +1985,7 @@ class CodeComparer {
 
         for (const exe of executables) {
             try {
-                await window.electronAPI.deleteTempFile(exe);
+                await window.oicppApi.deleteTempFile(exe);
                 logInfo('[对拍器] 已清理编译产物:', exe);
             } catch (error) {
                 logWarn('[对拍器] 清理编译产物失败:', exe, error);
@@ -2026,8 +2026,8 @@ class CodeComparer {
 
             logInfo('[对拍器-自动保存] 开始保存文件:', filePath);
 
-            if (window.electronAPI && window.electronAPI.saveFile) {
-                await window.electronAPI.saveFile(filePath, content);
+            if (window.oicppApi && window.oicppApi.saveFile) {
+                await window.oicppApi.saveFile(filePath, content);
                 logInfo('[对拍器-自动保存] 文件保存成功');
 
                 if (window.tabManager) {

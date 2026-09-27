@@ -62,8 +62,8 @@ class CompilerSettings {
 
     async applyCurrentTheme() {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const settings = await window.electronAPI.getAllSettings();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const settings = await window.oicppApi.getAllSettings();
                 if (settings && settings.theme) {
                     this.applyTheme(settings.theme);
                 }
@@ -267,7 +267,7 @@ class CompilerSettings {
             const isIntegratedOnlyPlatform = isMacPlatform || platform === 'linux';
             this.isMacPlatform = isMacPlatform;
             this.isIntegratedOnlyPlatform = isIntegratedOnlyPlatform;
-            const allSettings = await window.electronAPI.getAllSettings();
+            const allSettings = await window.oicppApi.getAllSettings();
             if (allSettings) {
                 const loadedCompilerArgs = allSettings.compilerArgs || (isMacPlatform ? '-std=c++14 -O2' : '-std=c++14 -O2 -static');
                 this.settings = {
@@ -330,7 +330,7 @@ class CompilerSettings {
                 ];
             }
 
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title,
                 filters,
                 properties: ['openFile']
@@ -372,7 +372,7 @@ class CompilerSettings {
                 ];
             }
 
-            const result = await window.electronAPI.showOpenDialog({
+            const result = await window.oicppApi.showOpenDialog({
                 title,
                 defaultPath,
                 filters,
@@ -542,8 +542,8 @@ class CompilerSettings {
             
             logInfo('准备保存编译器设置:', newSettings);
             
-            if (window.electronAPI && window.electronAPI.updateSettings) {
-                const result = await window.electronAPI.updateSettings(newSettings);
+            if (window.oicppApi && window.oicppApi.updateSettings) {
+                const result = await window.oicppApi.updateSettings(newSettings);
                 logInfo('保存设置结果:', result);
                 if (result.success) {
                     this.showMessage((window.i18n ? window.i18n.t('compiler.saveSuccess') : '编译器设置保存成功！'), 'success');
@@ -562,8 +562,8 @@ class CompilerSettings {
 
     async resetSettings() {
         try {
-            if (window.electronAPI && window.electronAPI.resetSettings) {
-                const result = await window.electronAPI.resetSettings();
+            if (window.oicppApi && window.oicppApi.resetSettings) {
+                const result = await window.oicppApi.resetSettings();
                 if (result.success) {
                     await this.loadSettings();
                     this.updateUI();
@@ -585,8 +585,8 @@ class CompilerSettings {
     }
 
     async getCurrentPlatform() {
-        if (window.electronAPI && window.electronAPI.getPlatform) {
-            return await window.electronAPI.getPlatform();
+        if (window.oicppApi && window.oicppApi.getPlatform) {
+            return await window.oicppApi.getPlatform();
         }
         
         const userAgent = navigator.userAgent.toLowerCase();
@@ -608,8 +608,8 @@ class CompilerSettings {
 
     async getDownloadedVersions() {
         try {
-            if (window.electronAPI && window.electronAPI.getDownloadedCompilers) {
-                return await window.electronAPI.getDownloadedCompilers();
+            if (window.oicppApi && window.oicppApi.getDownloadedCompilers) {
+                return await window.oicppApi.getDownloadedCompilers();
             }
         } catch (error) {
             logError('获取已下载编译器失败:', error);
@@ -619,9 +619,9 @@ class CompilerSettings {
 
     async isCompilerSelected(version) {
         try {
-            if (window.electronAPI && window.electronAPI.getAllSettings) {
-                const settings = await window.electronAPI.getAllSettings();
-                const userHome = await window.electronAPI.getUserHome();
+            if (window.oicppApi && window.oicppApi.getAllSettings) {
+                const settings = await window.oicppApi.getAllSettings();
+                const userHome = await window.oicppApi.getUserHome();
                 
                 if (!settings.compilerPath) {
                     return false;
@@ -702,9 +702,9 @@ class CompilerSettings {
                 name: compiler.name
             });
 
-            if (window.electronAPI && window.electronAPI.downloadCompiler) {
+            if (window.oicppApi && window.oicppApi.downloadCompiler) {
                 logInfo('[编译器设置] 调用electronAPI.downloadCompiler');
-                const result = await window.electronAPI.downloadCompiler({
+                const result = await window.oicppApi.downloadCompiler({
                     url: compiler.download_url,
                     version: compiler.version,
                     name: compiler.name
@@ -754,8 +754,8 @@ class CompilerSettings {
 
     async selectCompiler(version) {
         try {
-            if (window.electronAPI && window.electronAPI.selectCompiler) {
-                const result = await window.electronAPI.selectCompiler(version);
+            if (window.oicppApi && window.oicppApi.selectCompiler) {
+                const result = await window.oicppApi.selectCompiler(version);
                 
                 if (result.success) {
                     await this.setCompilerPath(result.compilerPath);
@@ -835,8 +835,8 @@ class CompilerSettings {
             
             logInfo('自动保存编译器路径设置:', newSettings);
             
-            if (window.electronAPI && window.electronAPI.updateSettings) {
-                const result = await window.electronAPI.updateSettings(newSettings);
+            if (window.oicppApi && window.oicppApi.updateSettings) {
+                const result = await window.oicppApi.updateSettings(newSettings);
                 if (result.success) {
                     logInfo('编译器路径设置已自动保存');
                 } else {
@@ -1065,8 +1065,8 @@ class CompilerSettings {
 
     async browseTestlib() {
         try {
-            if (window.electronAPI && window.electronAPI.showOpenDialog) {
-                const result = await window.electronAPI.showOpenDialog({
+            if (window.oicppApi && window.oicppApi.showOpenDialog) {
+                const result = await window.oicppApi.showOpenDialog({
                     title: '选择testlib.h文件',
                     properties: ['openFile'],
                     filters: [
@@ -1086,8 +1086,8 @@ class CompilerSettings {
                     
                     document.getElementById('testlib-path').value = testlibPath;
                     
-                    if (window.electronAPI && window.electronAPI.saveSetting) {
-                        await window.electronAPI.saveSetting('testlibPath', testlibPath);
+                    if (window.oicppApi && window.oicppApi.saveSetting) {
+                        await window.oicppApi.saveSetting('testlibPath', testlibPath);
                         this.showMessage((window.i18n ? window.i18n.t('compiler.testlibPathSaved') : 'Testlib路径已保存'), 'success');
                     }
                 }
@@ -1123,8 +1123,8 @@ class CompilerSettings {
         renderTestResult('testing', '正在测试 Testlib 环境...');
         
         try {
-            if (window.electronAPI && window.electronAPI.testTestlib) {
-                const result = await window.electronAPI.testTestlib(testlibPath);
+            if (window.oicppApi && window.oicppApi.testTestlib) {
+                const result = await window.oicppApi.testTestlib(testlibPath);
                 
                 if (result.success) {
                     renderTestResult('success', 'Testlib 测试成功！');
@@ -1259,12 +1259,12 @@ class CompilerSettings {
             
             this.showMessage(`开始下载 ${testlib.name} ${testlib.version}...`, 'info');
             
-            if (window.electronAPI && window.electronAPI.downloadTestlib) {
+            if (window.oicppApi && window.oicppApi.downloadTestlib) {
                 const fullUrl = testlib.downloadUrl.startsWith('http') 
                     ? testlib.downloadUrl 
                     : `https://oicpp.mywwzh.top${testlib.downloadUrl}`;
                 
-                const result = await window.electronAPI.downloadTestlib({
+                const result = await window.oicppApi.downloadTestlib({
                     url: fullUrl,
                     version: testlib.version,
                     name: testlib.name
@@ -1301,8 +1301,8 @@ class CompilerSettings {
     
     async selectTestlib(version) {
         try {
-            if (window.electronAPI && window.electronAPI.selectTestlib) {
-                const result = await window.electronAPI.selectTestlib(version);
+            if (window.oicppApi && window.oicppApi.selectTestlib) {
+                const result = await window.oicppApi.selectTestlib(version);
                 
                 if (result.success) {
                     this.showMessage(`已选择Testlib ${version}`, 'success');
@@ -1355,15 +1355,15 @@ class CompilerSettings {
     async setTestlibPath(path) {
         document.getElementById('testlib-path').value = path;
         
-        if (window.electronAPI && window.electronAPI.saveSetting) {
-            await window.electronAPI.saveSetting('testlibPath', path);
+        if (window.oicppApi && window.oicppApi.saveSetting) {
+            await window.oicppApi.saveSetting('testlibPath', path);
         }
     }
     
     async getDownloadedTestlibVersions() {
         try {
-            if (window.electronAPI && window.electronAPI.getDownloadedTestlibs) {
-                return await window.electronAPI.getDownloadedTestlibs();
+            if (window.oicppApi && window.oicppApi.getDownloadedTestlibs) {
+                return await window.oicppApi.getDownloadedTestlibs();
             }
         } catch (error) {
             logError('获取已下载Testlib失败:', error);
@@ -1373,8 +1373,8 @@ class CompilerSettings {
     
     async isTestlibSelected(version) {
         try {
-            if (window.electronAPI && window.electronAPI.isTestlibSelected) {
-                return await window.electronAPI.isTestlibSelected(version);
+            if (window.oicppApi && window.oicppApi.isTestlibSelected) {
+                return await window.oicppApi.isTestlibSelected(version);
             }
         } catch (error) {
             logError('检查Testlib选择状态失败:', error);
