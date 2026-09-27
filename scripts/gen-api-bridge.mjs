@@ -1,5 +1,5 @@
 /**
- * 生成 `frontend/js/oicpp-api-legacy.js` —— 与 `window.electronAPI` 同名的扁平 API 桥。
+ * 生成 `frontend/renderer/js/oicpp-api-legacy.js` —— 与 `window.electronAPI` 同名的扁平 API 桥。
  *
  * 为什么需要它：
  *   渲染层有 500+ 处 `window.electronAPI.xxx()` 调用。逐个手写改名既慢又容易漏，
@@ -15,7 +15,7 @@
  *
  * 用法：node scripts/gen-api-bridge.mjs（必须在 npm run prepare:frontend 之后执行，
  *       因为产物要写进已准备好的 frontend/ 目录）
- * 产物：frontend/js/oicpp-api-legacy.js（自动生成，勿手改）
+ * 产物：frontend/renderer/js/oicpp-api-legacy.js（自动生成，勿手改）
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,7 +25,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const shimPath = path.join(root, 'frontend-src', 'shim', 'electron-api.js');
 const rendererDir = path.join(root, 'frontend-src', 'renderer');
-const outPath = path.join(root, 'frontend', 'js', 'oicpp-api-legacy.js');
+const prepareDir = path.join(root, 'frontend');
+// 产物必须落在页面里的 <script src="js/oicpp-api-legacy.js"> 能指到的位置：
+// 页面在 frontend/renderer/ 下，所以是 renderer/js/，不是 frontend/js/。
+const outPath = path.join(prepareDir, 'renderer', 'js', 'oicpp-api-legacy.js');
 
 const shim = fs.readFileSync(shimPath, 'utf8');
 
