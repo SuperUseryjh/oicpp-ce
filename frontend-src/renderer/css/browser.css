@@ -130,12 +130,26 @@
     overflow: hidden;
 }
 
-/* webview 元素 */
-.browser-webview {
-    width: 100%;
-    height: 100%;
-    border: none;
-    display: block;
+/* 远程 WebView 的占位层：真实页面由 Rust 侧子 WebView 覆盖在此区域上方 */
+.browser-webview-surface {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background-color: var(--editor-bg, #1e1e1e);
+    color: var(--text-muted, #6a6a6a);
+    font-size: 12px;
+    text-align: center;
+    overflow: hidden;
+}
+
+.browser-webview-placeholder {
+    max-width: 520px;
+    line-height: 1.6;
+    pointer-events: none;
+    word-break: break-word;
 }
 
 /* 加载进度条 */

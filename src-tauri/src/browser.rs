@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
@@ -17,6 +18,52 @@ use crate::ipc::Ipc;
 use crate::paths;
 
 static VIEWS: Lazy<Mutex<HashMap<String, Webview>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// 在页面加载完成后读取标题、最终 URL 和导航类型。
+/// 返回对象而不是字符串，WebView2 / WebKitGTK 都会把对象序列化成 JSON。
+const PAGE_INFO_SCRIPT: &str = r#"
+(function () {
+  try {
+    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    return {
+      title: String(document.title || ''),
+      url: String(location.href || ''),
+      navType: nav && nav.type ? String(nav.type) : 'navigate'
+    };
+  } catch (_) {
+    return { title: '', url: String(location.href || ''), navType: 'navigate' };
+  }
+})()
+"#;
+
+fn parse_eval_json(raw: &str) -> Option<Value> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    match value {
+        // 某些平台会把结果再包一层 JSON 字符串
+        Value::String(text) => serde_json::from_str(&text).ok(),
+        other => Some(other),
+    }
+}
+
+async fn read_page_info(view: &Webview) -> Option<Value> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // eval_with_callback 要求 Fn，而 oneshot::Sender 只能被消费一次
+    let tx = Mutex::new(Some(tx));
+    view.eval_with_callback(PAGE_INFO_SCRIPT, move |raw| {
+        if let Ok(mut guard) = tx.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(raw);
+            }
+        }
+    })
+    .ok()?;
+
+    let raw = tokio::time::timeout(Duration::from_millis(1500), rx)
+        .await
+        .ok()?
+        .ok()?;
+    parse_eval_json(&raw)
+}
 
 fn emit_view_event(app: &tauri::AppHandle, id: &str, event_type: &str, extra: Value) {
     let mut payload = json!({ "id": id, "type": event_type });
@@ -144,16 +191,35 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         "browser-webview-state" => {
             let options = ipc.object_arg(0);
             let id = id_of(&options);
-            let mut url_text = String::new();
-            if let Ok(guard) = VIEWS.lock() {
-                if let Some(view) = guard.get(&id) {
-                    if let Ok(url) = view.url() {
-                        url_text = url.to_string();
+            let view = VIEWS
+                .lock()
+                .ok()
+                .and_then(|guard| guard.get(&id).cloned());
+            let Some(view) = view else {
+                return Some(Ok(json!({ "url": "", "title": "", "navType": "navigate" })));
+            };
+
+            let url_text = view.url().map(|url| url.to_string()).unwrap_or_default();
+            match read_page_info(&view).await {
+                Some(mut info) => {
+                    let has_url = info
+                        .get("url")
+                        .and_then(|value| value.as_str())
+                        .map(|value| !value.is_empty())
+                        .unwrap_or(false);
+                    if !has_url {
+                        if let Some(map) = info.as_object_mut() {
+                            map.insert("url".into(), Value::String(url_text));
+                        }
                     }
+                    Some(Ok(info))
                 }
+                None => Some(Ok(json!({
+                    "url": url_text,
+                    "title": "",
+                    "navType": "navigate"
+                }))),
             }
-            // 注：`tauri::Webview` 没有 title() 接口，标题由渲染层自行维护
-            Some(Ok(json!({ "url": url_text, "title": "" })))
         }
         "browser-webview-close" => {
             let options = ipc.object_arg(0);
@@ -199,9 +265,9 @@ async fn create(ipc: &Ipc<'_>) -> Result<Value, String> {
     let id_for_window = id.clone();
 
     let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-        .auto_resize()
+        .focused(false)
         .data_directory(data_dir)
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             let event_type = match payload.event() {
                 PageLoadEvent::Started => "did-start-loading",
                 PageLoadEvent::Finished => "did-stop-loading",
@@ -212,6 +278,19 @@ async fn create(ipc: &Ipc<'_>) -> Result<Value, String> {
                 event_type,
                 json!({ "url": payload.url().to_string() }),
             );
+
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                // 页面加载结束后再取标题，避免拿到空 title。
+                let app = app_for_load.clone();
+                let id = id_for_load.clone();
+                let webview = webview.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    if let Some(info) = read_page_info(&webview).await {
+                        emit_view_event(&app, &id, "page-info", info);
+                    }
+                });
+            }
         })
         .on_new_window(move |url, _features| {
             events::broadcast_one(

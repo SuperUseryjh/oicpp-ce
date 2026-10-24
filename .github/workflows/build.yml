@@ -24,10 +24,6 @@ jobs:
             target: x86_64-pc-windows-msvc
             args: "--bundles nsis"
             artifact: windows-artifacts
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            args: "--target aarch64-apple-darwin --bundles app,dmg"
-            artifact: macos-arm64-artifacts
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             args: "--bundles deb,appimage"
@@ -83,12 +79,11 @@ jobs:
         run: npm install --no-audit --no-fund
 
       # 渲染层在 clangd 缺失时会抛错并导致 Monaco 编辑器创建失败，必须随包分发。
-      # Windows / Linux 上游一定有产物，失败即中断；macOS 可能没有 arm64 产物，允许降级。
+      # Windows / Linux 上游一定有产物，失败即中断。
       - name: Prepare clangd bundle
         run: npm run prepare:clangd
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: ${{ startsWith(matrix.platform, 'macos') }}
 
       - name: Generate frontend (from frontend-src)
         run: npm run prepare:frontend

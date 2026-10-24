@@ -37,16 +37,35 @@ p{font-size:13px;color:${muted};margin-bottom:24px;text-align:center;line-height
 
 class BrowserManager {
     constructor() {
-        this.browserTabs = new Map(); // uniqueKey -> { webview, container, navBar, urlInput, title }
+        this.browserTabs = new Map(); // uniqueKey -> { container, frameWrapper, navBar, remoteId, ... }
+        this._remoteToKey = new Map(); // Rust 侧 webview id -> uniqueKey
+        this._remoteSeq = 0;
         this._currentFocusKey = null;
-        this._pendingNav = new Map(); // uniqueKey -> url
         this._newTabPage = NEW_TAB_PAGE_HTML;
+        this._userAgent = '';
 
         if (window.oicppApi?.onBrowserOpenNewTab) {
             this._removeOpenNewTabListener = window.oicppApi.onBrowserOpenNewTab((request) => {
                 this._handleOpenNewTabRequest(request);
             });
         }
+
+        if (window.oicppApi?.onBrowserViewEvent) {
+            this._removeViewEventListener = window.oicppApi.onBrowserViewEvent((payload) => {
+                this._handleViewEvent(payload);
+            });
+        }
+
+        // ResizeObserver 能覆盖尺寸变化；这里额外处理窗口缩放和滚动导致的坐标变化。
+        this._layoutListener = () => {
+            for (const [uniqueKey, state] of this.browserTabs.entries()) {
+                if (state.remoteReady && state.container?.classList.contains('active')) {
+                    this._scheduleSyncBounds(uniqueKey);
+                }
+            }
+        };
+        window.addEventListener('resize', this._layoutListener);
+        document.addEventListener('scroll', this._layoutListener, true);
     }
 
     /**
@@ -71,93 +90,59 @@ class BrowserManager {
         const navBar = this._createNavBar(uniqueKey, initialUrl);
         container.appendChild(navBar);
 
-        // iframe 容器
+        // 远程 WebView 只覆盖这一层；导航栏仍由主 WebView 渲染
         const frameWrapper = document.createElement('div');
         frameWrapper.className = 'browser-webview-wrapper';
         frameWrapper.style.flex = '1';
         frameWrapper.style.position = 'relative';
         frameWrapper.style.overflow = 'hidden';
 
-        const webview = document.createElement('webview');
-        webview.className = 'browser-webview';
-        // Electron 37 创建的 webview 内部 iframe 没有高度样式，会保留
-        // HTML iframe 默认的 150px 高度。必须在首次导航前修正，否则
-        // guest surface 即使外层之后变高，仍只渲染顶部 150px。
-        const shadowFrame = webview.shadowRoot?.querySelector('iframe');
-        if (shadowFrame) {
-            shadowFrame.style.width = '100%';
-            shadowFrame.style.height = '100%';
-        }
-        webview.setAttribute('partition', 'persist:oicpp-browser');
-        const browserUserAgent = navigator.userAgent
-            .replace(/\sElectron\/\S+/i, '')
-            .replace(/\soicpp-ide\/\S+/i, '');
-        webview.setAttribute('useragent', browserUserAgent);
-        webview.setAttribute('src', initialUrl);
-        // 允许 guest 打开新窗口（target="_blank" / window.open），
-        // 否则 Electron 会在 webview 层拦截弹窗，setWindowOpenHandler 不会触发，
-        // 导致网页内链接无法在新标签页中打开。
-        webview.setAttribute('allowpopups', 'true');
-        webview.style.width = '100%';
-        webview.style.height = '100%';
-        webview.style.border = 'none';
-
-        frameWrapper.appendChild(webview);
+        // Rust 侧创建的子 WebView 无法嵌入 DOM，只能覆盖在主 WebView 上方。
+        // 这里放一个占位层，负责显示加载/失败状态，真实页面由 browser-webview-* 命令控制。
+        const remoteSurface = document.createElement('div');
+        remoteSurface.className = 'browser-webview-surface';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'browser-webview-placeholder';
+        placeholder.textContent = window.i18n ? window.i18n.t('browser.loading') : '正在加载浏览器视图...';
+        remoteSurface.appendChild(placeholder);
+        frameWrapper.appendChild(remoteSurface);
         container.appendChild(frameWrapper);
 
-        // Electron 37 的 webview 内部 iframe 在初始 tab 中（容器为 display:none）
-        // 时不会自动获得高度样式，会保留 HTML iframe 默认的 150px 高度。
-        // 必须在首次导航前修正，否则 guest surface 即使外层之后变高，
-        // 仍只渲染顶部 150px，导致页面显示不全、点击错位、链接无法跳转。
-        // 注意：webview 挂载到 DOM 后 shadowRoot 才会存在，因此在此处才可获取。
-        const fixInternalFrame = (el) => {
-            const internalFrame = el?.shadowRoot?.querySelector('iframe');
-            if (internalFrame) {
-                internalFrame.style.width = '100%';
-                internalFrame.style.height = '100%';
-            }
-        };
-        fixInternalFrame(webview);
-        webview.addEventListener('did-attach', () => fixInternalFrame(webview), { once: true });
-
-        // 保存引用
+        const initialHistory = this._isHistoryUrl(initialUrl) ? [initialUrl] : [];
         const state = {
-            webview,
-            iframe: webview,
-            frameWrapper,
             container,
+            frameWrapper,
+            remoteSurface,
+            placeholder,
             navBar,
             urlInput: navBar.querySelector('.browser-url-input'),
+            remoteId: '',
+            remoteReady: false,
+            remoteCreating: null,
+            remoteError: '',
+            destroyed: false,
+            lastBounds: null,
+            visible: false,
             title: '',
-            canGoBack: false,
-            canGoForward: false,
             isLoading: false,
             currentUrl: initialUrl,
-            history: [],
-            // 标记是否已显示过；首次显示时强制重载，确保 guest 以正确视口重新布局
-            _hasBeenShown: false
+            history: initialHistory,
+            historyIndex: Math.max(0, initialHistory.length - 1),
+            pendingHistoryMode: '',
+            pendingHistoryUrl: '',
+            syncRaf: 0,
+            infoPollTimer: null,
+            infoPollInFlight: false,
+            loadingTimer: null,
+            resizeObserver: null
         };
         this.browserTabs.set(uniqueKey, state);
 
-        const syncWebviewSize = () => {
-            const width = frameWrapper.clientWidth;
-            const height = frameWrapper.clientHeight;
-            if (width > 0) webview.style.width = `${width}px`;
-            if (height > 0) webview.style.height = `${height}px`;
-            const internalFrame = webview.shadowRoot?.querySelector('iframe');
-            if (internalFrame) {
-                internalFrame.style.width = '100%';
-                internalFrame.style.height = '100%';
-            }
-        };
-        state.syncWebviewSize = syncWebviewSize;
-        if (typeof ResizeObserver === 'function') {
-            state.resizeObserver = new ResizeObserver(syncWebviewSize);
-            state.resizeObserver.observe(frameWrapper);
-        }
+        state.resizeObserver = new ResizeObserver(() => this._scheduleSyncBounds(uniqueKey));
+        state.resizeObserver.observe(frameWrapper);
 
-        this._bindWebviewEvents(uniqueKey, state);
-
+        this._updateNavButtons(uniqueKey);
+        this._updateReloadButton(uniqueKey, false);
         return container;
     }
 
@@ -266,44 +251,369 @@ class BrowserManager {
     }
 
     /**
-     * 绑定 webview 事件
+     * 处理 Rust 侧子 WebView 广播的事件
      */
-    _bindWebviewEvents(uniqueKey, state) {
-        const { webview, navBar, urlInput } = state;
-        const updateLocation = (url) => {
-            if (!url || url === 'about:blank' || url.startsWith('data:text/html')) return;
-            state.currentUrl = url;
-            urlInput.value = url;
-            this._updateNavButtons(uniqueKey);
-        };
+    _handleViewEvent(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        const uniqueKey = this._remoteToKey.get(payload.id || '');
+        if (!uniqueKey) return;
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state) return;
 
-        webview.addEventListener('did-start-loading', () => {
-            state.isLoading = true;
-            this._updateReloadButton(uniqueKey, true);
-            navBar.classList.add('loading');
-        });
-        webview.addEventListener('did-stop-loading', () => {
-            state.isLoading = false;
-            this._updateReloadButton(uniqueKey, false);
-            navBar.classList.remove('loading');
-            try { updateLocation(webview.getURL()); } catch (_) {}
-        });
-        webview.addEventListener('did-navigate', (event) => updateLocation(event.url));
-        webview.addEventListener('did-navigate-in-page', (event) => updateLocation(event.url));
-        webview.addEventListener('page-title-updated', (event) => {
-            const title = typeof event.title === 'string' ? event.title.trim() : '';
-            if (!title) return;
-            state.title = title;
-            this._updateTabTitle(uniqueKey, title);
-        });
-        webview.addEventListener('did-fail-load', (event) => {
-            if (event.errorCode === -3) return;
-            state.isLoading = false;
-            this._updateReloadButton(uniqueKey, false);
-            navBar.classList.remove('loading');
-        });
+        const type = payload.type || '';
+        if (type === 'did-start-loading') {
+            this._startLoading(uniqueKey);
+            return;
+        }
+        if (type === 'did-stop-loading') {
+            const url = typeof payload.url === 'string' ? payload.url : '';
+            if (url) {
+                state.currentUrl = url;
+                state.urlInput.value = this._displayUrl(url);
+                this._rememberUrl(uniqueKey, url);
+            }
+            this._finishLoading(uniqueKey);
+            return;
+        }
+        if (type === 'page-info') {
+            this._applyPageInfo(uniqueKey, payload, true);
+        }
+    }
+
+    _startLoading(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state) return;
+        state.isLoading = true;
+        this._updateReloadButton(uniqueKey, true);
+        state.navBar.classList.add('loading');
+        if (state.loadingTimer) clearTimeout(state.loadingTimer);
+        // 某些失败页面不会触发 did-stop-loading，超时后恢复按钮状态
+        state.loadingTimer = setTimeout(() => this._finishLoading(uniqueKey), 30000);
+    }
+
+    _finishLoading(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state) return;
+        state.isLoading = false;
+        if (state.loadingTimer) {
+            clearTimeout(state.loadingTimer);
+            state.loadingTimer = null;
+        }
+        this._updateReloadButton(uniqueKey, false);
+        state.navBar.classList.remove('loading');
+    }
+
+    _applyPageInfo(uniqueKey, info, updateHistory) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state || !info) return;
+
+        const url = typeof info.url === 'string' ? info.url : '';
+        const rawTitle = typeof info.title === 'string' ? info.title : '';
+        const title = rawTitle.replace(/\s+/g, ' ').trim().slice(0, 160);
+
+        if (url) {
+            state.currentUrl = url;
+            state.urlInput.value = this._displayUrl(url);
+            this._rememberUrl(uniqueKey, url);
+            if (updateHistory) {
+                this._updateHistoryFromInfo(state, url, info.navType || 'navigate');
+            }
+        }
+
+        const displayTitle = title || this._titleFromUrl(url);
+        if (displayTitle && displayTitle !== state.title) {
+            state.title = displayTitle;
+            this._updateTabTitle(uniqueKey, displayTitle);
+        }
 
         this._updateNavButtons(uniqueKey);
+    }
+
+    _rememberUrl(uniqueKey, url) {
+        const tabData = window.tabManager?.tabs?.get(uniqueKey);
+        if (tabData) {
+            tabData.browserUrl = url;
+        }
+    }
+
+    _updateHistoryFromInfo(state, url, navType) {
+        const mode = state.pendingHistoryMode;
+        state.pendingHistoryMode = '';
+        state.pendingHistoryUrl = '';
+
+        if (!this._isHistoryUrl(url)) {
+            return;
+        }
+
+        if (mode === 'navigate') {
+            if (state.historyIndex >= 0 && state.historyIndex < state.history.length) {
+                state.history[state.historyIndex] = url;
+            } else {
+                this._pushHistory(state, url);
+            }
+            return;
+        }
+
+        if (mode === 'back' || mode === 'forward') {
+            const found = state.history.lastIndexOf(url);
+            if (found >= 0) {
+                state.historyIndex = found;
+            } else if (state.historyIndex >= 0 && state.historyIndex < state.history.length) {
+                state.history[state.historyIndex] = url;
+            }
+            return;
+        }
+
+        if (navType === 'reload') {
+            return;
+        }
+
+        const current = state.history[state.historyIndex];
+        if (url === current) {
+            return;
+        }
+
+        const found = state.history.lastIndexOf(url);
+        if (found >= 0 && (found === state.historyIndex - 1 || found === state.historyIndex + 1)) {
+            state.historyIndex = found;
+            return;
+        }
+
+        this._pushHistory(state, url);
+    }
+
+    _pushHistory(state, url) {
+        if (!this._isHistoryUrl(url)) return;
+        if (state.history[state.historyIndex] === url) return;
+        if (state.historyIndex < state.history.length - 1) {
+            state.history.splice(state.historyIndex + 1);
+        }
+        state.history.push(url);
+        state.historyIndex = state.history.length - 1;
+    }
+
+    _isHistoryUrl(url) {
+        return typeof url === 'string' && /^(https?|file):\/\//i.test(url);
+    }
+
+    _displayUrl(url) {
+        if (!url || url === 'about:blank' || /^data:/i.test(url)) return '';
+        return url;
+    }
+
+    _titleFromUrl(url) {
+        if (!url) return '';
+        try {
+            const parsed = new URL(url);
+            if (parsed.protocol === 'file:') {
+                return decodeURIComponent(parsed.pathname.split('/').pop() || '');
+            }
+            return (parsed.hostname || '').replace(/^www\./i, '');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    _browserUserAgent() {
+        if (this._userAgent) return this._userAgent;
+        this._userAgent = (navigator.userAgent || '')
+            .replace(/\sElectron\/\S+/ig, '')
+            .replace(/\soicpp-ide\/\S+/ig, '')
+            .replace(/\sOICPP[^\s]*/ig, '')
+            .trim();
+        return this._userAgent;
+    }
+
+    _boundsFor(state) {
+        if (!state?.frameWrapper) return null;
+        const rect = state.frameWrapper.getBoundingClientRect();
+        const width = Math.round(rect.width);
+        const height = Math.round(rect.height);
+        if (width < 2 || height < 2) return null;
+        return {
+            x: Math.max(0, Math.round(rect.left)),
+            y: Math.max(0, Math.round(rect.top)),
+            width,
+            height
+        };
+    }
+
+    async _ensureRemoteView(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state || state.destroyed) return false;
+        if (state.remoteReady) return true;
+        if (state.remoteCreating) return state.remoteCreating;
+
+        const bounds = this._boundsFor(state);
+        if (!bounds) return false;
+
+        const api = window.oicppApi;
+        if (!api || typeof api.browserViewCreate !== 'function') {
+            this._setPlaceholderError(state, '浏览器接口不可用');
+            return false;
+        }
+
+        if (!state.remoteId) {
+            state.remoteId = `browser-${Date.now().toString(36)}-${++this._remoteSeq}`;
+            this._remoteToKey.set(state.remoteId, uniqueKey);
+        }
+
+        const url = state.currentUrl || this._newTabPage;
+        state.remoteCreating = api.browserViewCreate({
+            id: state.remoteId,
+            url,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            userAgent: this._browserUserAgent()
+        }).then((result) => {
+            if (!result || result.ok === false) {
+                throw new Error(result?.error || '创建浏览器视图失败');
+            }
+            state.remoteReady = true;
+            state.remoteError = '';
+            state.lastBounds = bounds;
+
+            // 标签页可能在创建期间被关闭：此时必须立刻关闭刚创建的子 WebView。
+            if (state.destroyed || this.browserTabs.get(uniqueKey) !== state) {
+                try {
+                    const pending = window.oicppApi?.browserViewClose?.({ id: state.remoteId });
+                    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+                } catch (_) {}
+                return false;
+            }
+
+            // 子 WebView 创建后默认就是可见的，这里记录真实状态并立即按容器位置同步；
+            // 若标签页在创建期间已经被隐藏，_syncBoundsNow 会把它重新隐藏。
+            state.visible = true;
+            if (state.placeholder) state.placeholder.style.display = 'none';
+            this._syncBoundsNow(uniqueKey);
+            return true;
+        }).catch((error) => {
+            const message = error?.message || String(error);
+            logError('创建内置浏览器视图失败:', message);
+            state.remoteError = message;
+            this._setPlaceholderError(state, message);
+            return false;
+        }).finally(() => {
+            state.remoteCreating = null;
+        });
+
+        return state.remoteCreating;
+    }
+
+    _setPlaceholderError(state, message) {
+        if (!state?.placeholder) return;
+        state.placeholder.style.display = '';
+        state.placeholder.textContent = `浏览器视图创建失败：${message}`;
+    }
+
+    _scheduleSyncBounds(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state || state.syncRaf) return;
+        state.syncRaf = requestAnimationFrame(() => {
+            state.syncRaf = 0;
+            this._syncBoundsNow(uniqueKey);
+        });
+    }
+
+    _syncBoundsNow(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state || !state.remoteReady) return;
+
+        const active = state.container.classList.contains('active')
+            && state.container.style.display !== 'none';
+        if (!active) {
+            this._setRemoteVisible(state, false);
+            return;
+        }
+
+        const bounds = this._boundsFor(state);
+        if (!bounds) {
+            this._setRemoteVisible(state, false);
+            return;
+        }
+
+        this._setRemoteVisible(state, true);
+
+        const last = state.lastBounds;
+        if (last
+            && last.x === bounds.x
+            && last.y === bounds.y
+            && last.width === bounds.width
+            && last.height === bounds.height) {
+            return;
+        }
+        state.lastBounds = bounds;
+
+        const api = window.oicppApi;
+        if (!api || typeof api.browserViewSetBounds !== 'function') return;
+        api.browserViewSetBounds({
+            id: state.remoteId,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height
+        }).catch((error) => {
+            logWarn('同步内置浏览器尺寸失败:', error?.message || error);
+        });
+    }
+
+    _setRemoteVisible(state, visible) {
+        if (!state?.remoteReady || state.destroyed || state.visible === visible) return;
+        const api = window.oicppApi;
+        if (!api || typeof api.browserViewSetVisible !== 'function') return;
+        const previous = state.visible;
+        state.visible = visible;
+        api.browserViewSetVisible({ id: state.remoteId, visible }).catch((error) => {
+            state.visible = previous;
+            logWarn('切换内置浏览器可见性失败:', error?.message || error);
+        });
+    }
+
+    _startInfoPolling(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state || state.infoPollTimer) return;
+        state.infoPollTimer = setInterval(() => {
+            if (!state.remoteReady || state.isLoading) return;
+            if (!state.container.classList.contains('active')) return;
+            this._refreshPageInfo(uniqueKey);
+        }, 2000);
+    }
+
+    _stopInfoPolling(state) {
+        if (!state?.infoPollTimer) return;
+        clearInterval(state.infoPollTimer);
+        state.infoPollTimer = null;
+    }
+
+    _refreshPageInfo(uniqueKey) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state?.remoteReady || state.infoPollInFlight) return;
+        const api = window.oicppApi;
+        if (!api || typeof api.browserViewState !== 'function') return;
+
+        state.infoPollInFlight = true;
+        api.browserViewState({ id: state.remoteId }).then((info) => {
+            if (!info || typeof info !== 'object') return;
+            if (this.browserTabs.get(uniqueKey) !== state) return;
+            this._applyPageInfo(uniqueKey, info, false);
+        }).catch((error) => {
+            logWarn('读取内置浏览器状态失败:', error?.message || error);
+        }).finally(() => {
+            state.infoPollInFlight = false;
+        });
+    }
+
+    _remoteAction(uniqueKey, action) {
+        const state = this.browserTabs.get(uniqueKey);
+        if (!state?.remoteReady) return Promise.resolve();
+        const api = window.oicppApi;
+        if (!api || typeof api.browserViewAction !== 'function') return Promise.resolve();
+        return api.browserViewAction({ id: state.remoteId, action }).catch((error) => {
+            logWarn('内置浏览器操作失败:', action, error?.message || error);
+        });
     }
 
     /**
@@ -328,15 +638,14 @@ class BrowserManager {
         if (!url || !/^https?:\/\//i.test(url)) return;
 
         let sourceGroupId = '';
-        const sourceWebContentsId = Number(request?.sourceWebContentsId);
-        if (Number.isInteger(sourceWebContentsId)) {
-            for (const state of this.browserTabs.values()) {
-                try {
-                    if (state.webview?.getWebContentsId?.() === sourceWebContentsId) {
-                        sourceGroupId = state.container?.dataset?.groupId || '';
-                        break;
-                    }
-                } catch (_) {}
+        const sourceRemoteId = typeof request?.sourceWebviewId === 'string'
+            ? request.sourceWebviewId
+            : '';
+        if (sourceRemoteId) {
+            const sourceKey = this._remoteToKey.get(sourceRemoteId);
+            const sourceState = sourceKey ? this.browserTabs.get(sourceKey) : null;
+            if (sourceState) {
+                sourceGroupId = sourceState.container?.dataset?.groupId || '';
             }
         }
 
@@ -358,10 +667,32 @@ class BrowserManager {
             }
         } catch (_) {}
         if (!url) return;
+
+        const hadRemote = state.remoteReady;
+        this._pushHistory(state, url);
+        state.pendingHistoryMode = 'navigate';
+        state.pendingHistoryUrl = url;
         state.currentUrl = url;
-        state.webview.loadURL(url).catch(() => {});
-        state.urlInput.value = url;
+        state.urlInput.value = this._displayUrl(url);
+        this._rememberUrl(uniqueKey, url);
         this._updateNavButtons(uniqueKey);
+
+        if (!hadRemote) {
+            this._startLoading(uniqueKey);
+            const ready = await this._ensureRemoteView(uniqueKey);
+            if (!ready) this._finishLoading(uniqueKey);
+            return;
+        }
+
+        this._startLoading(uniqueKey);
+        try {
+            await window.oicppApi.browserViewNavigate({ id: state.remoteId, url });
+        } catch (error) {
+            state.pendingHistoryMode = '';
+            state.pendingHistoryUrl = '';
+            logWarn('内置浏览器导航失败:', error?.message || error);
+            this._finishLoading(uniqueKey);
+        }
     }
 
     /**
@@ -369,11 +700,12 @@ class BrowserManager {
      */
     goBack(uniqueKey) {
         const state = this.browserTabs.get(uniqueKey);
-        if (!state?.webview) return;
-        try {
-            if (state.webview.canGoBack()) state.webview.goBack();
-        } catch (_) {}
+        if (!state || !state.remoteReady || state.historyIndex <= 0) return;
+        state.pendingHistoryMode = 'back';
+        state.historyIndex -= 1;
         this._updateNavButtons(uniqueKey);
+        this._startLoading(uniqueKey);
+        this._remoteAction(uniqueKey, 'back');
     }
 
     /**
@@ -381,11 +713,12 @@ class BrowserManager {
      */
     goForward(uniqueKey) {
         const state = this.browserTabs.get(uniqueKey);
-        if (!state?.webview) return;
-        try {
-            if (state.webview.canGoForward()) state.webview.goForward();
-        } catch (_) {}
+        if (!state || !state.remoteReady || state.historyIndex >= state.history.length - 1) return;
+        state.pendingHistoryMode = 'forward';
+        state.historyIndex += 1;
         this._updateNavButtons(uniqueKey);
+        this._startLoading(uniqueKey);
+        this._remoteAction(uniqueKey, 'forward');
     }
 
     /**
@@ -393,9 +726,9 @@ class BrowserManager {
      */
     reload(uniqueKey) {
         const state = this.browserTabs.get(uniqueKey);
-        if (state?.webview) {
-            try { state.webview.reload(); } catch (_) {}
-        }
+        if (!state || !state.remoteReady) return;
+        this._startLoading(uniqueKey);
+        this._remoteAction(uniqueKey, 'reload');
     }
 
     /**
@@ -403,9 +736,9 @@ class BrowserManager {
      */
     stopLoading(uniqueKey) {
         const state = this.browserTabs.get(uniqueKey);
-        if (state?.webview) {
-            try { state.webview.stop(); } catch (_) {}
-        }
+        if (!state || !state.remoteReady) return;
+        this._finishLoading(uniqueKey);
+        this._remoteAction(uniqueKey, 'stop');
     }
 
     /**
@@ -416,14 +749,10 @@ class BrowserManager {
         if (!state) return;
         const backBtn = state.navBar.querySelector('.browser-nav-back');
         const forwardBtn = state.navBar.querySelector('.browser-nav-forward');
-        let canGoBack = false;
-        let canGoForward = false;
-        try {
-            canGoBack = state.webview?.canGoBack?.() || false;
-            canGoForward = state.webview?.canGoForward?.() || false;
-        } catch (_) {}
-        if (backBtn) backBtn.classList.toggle('disabled', !canGoBack);
-        if (forwardBtn) forwardBtn.classList.toggle('disabled', !canGoForward);
+        if (backBtn) backBtn.classList.toggle('disabled', state.historyIndex <= 0);
+        if (forwardBtn) {
+            forwardBtn.classList.toggle('disabled', state.historyIndex >= state.history.length - 1);
+        }
     }
 
     /**
@@ -485,20 +814,31 @@ class BrowserManager {
     destroyBrowserTab(uniqueKey) {
         const state = this.browserTabs.get(uniqueKey);
         if (!state) return;
+
+        state.destroyed = true;
+        this._stopInfoPolling(state);
+        if (state.loadingTimer) {
+            clearTimeout(state.loadingTimer);
+            state.loadingTimer = null;
+        }
+        if (state.syncRaf) {
+            cancelAnimationFrame(state.syncRaf);
+            state.syncRaf = 0;
+        }
+        if (state.resizeObserver) {
+            try { state.resizeObserver.disconnect(); } catch (_) {}
+            state.resizeObserver = null;
+        }
+
+        if (state.remoteId) {
+            this._remoteToKey.delete(state.remoteId);
+            try {
+                const pending = window.oicppApi?.browserViewClose?.({ id: state.remoteId });
+                if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+            } catch (_) {}
+        }
+
         try {
-            if (state.webview && state.webview.parentNode) {
-                try { state.webview.stop(); } catch (_) {}
-                state.webview.parentNode.removeChild(state.webview);
-            }
-            if (state.resizeObserver) {
-                try { state.resizeObserver.disconnect(); } catch (_) {}
-                state.resizeObserver = null;
-            }
-            // 清理导航栏
-            if (state.navBar && state.navBar.parentNode) {
-                state.navBar.parentNode.removeChild(state.navBar);
-            }
-            // 清理容器
             if (state.container && state.container.parentNode) {
                 state.container.parentNode.removeChild(state.container);
             }
@@ -531,6 +871,7 @@ class BrowserManager {
             if (existing.container.dataset.groupId !== groupId) {
                 existing.container.dataset.groupId = groupId;
             }
+            this._scheduleSyncBounds(uniqueKey);
             return existing.container;
         }
         return this.createBrowserContainer({ groupId, uniqueKey, url });
@@ -544,49 +885,19 @@ class BrowserManager {
         if (!state || !state.container) return;
         state.container.classList.add('active');
         state.container.style.display = '';
-        if (state.webview) {
-            // webview 在 display:none 的容器中初始化时会保留 Chromium 默认的
-            // 300x150 guest 尺寸；显示后必须用实际像素尺寸触发 guest 重排。
-            requestAnimationFrame(() => state.syncWebviewSize?.());
-            try { state.webview.focus(); } catch (_) {}
 
-            // 如果是因为 DOM 搬移需要恢复内容，或有内容丢失迹象，则重新加载
-            const needsRestore = state._needsContentRestore;
-            state._needsContentRestore = false;
-
-            let shouldReload = needsRestore;
-            // webview 曾在 display:none 容器中加载时，guest 布局可能不完整
-            // （例如只渲染部分区域、背景留黑）。首次显示时强制重新加载，
-            // 让 guest 以正确的视口尺寸重新布局。
-            if (!state._hasBeenShown) {
-                shouldReload = true;
+        // 等浏览器容器完成布局后再计算子 WebView 的位置。
+        requestAnimationFrame(async () => {
+            if (this.browserTabs.get(uniqueKey) !== state) return;
+            await this._ensureRemoteView(uniqueKey);
+            this._syncBoundsNow(uniqueKey);
+            if (state.remoteReady && state.container.classList.contains('active')) {
+                this._startInfoPolling(uniqueKey);
+                this._refreshPageInfo(uniqueKey);
+            } else {
+                this._stopInfoPolling(state);
             }
-            state._hasBeenShown = true;
-            try {
-                shouldReload = shouldReload || !state.webview.getURL();
-            } catch (_) {
-                // webview 刚挂载到 DOM 时 guest 实例可能尚未就绪。
-                // 此时必须在下一帧主动加载，否则只会显示编辑器背景。
-                shouldReload = true;
-            }
-
-            if (shouldReload) {
-                const url = state.currentUrl || this._newTabPage || 'about:blank';
-                // 用 requestAnimationFrame 确保 DOM 已挂载后再设置 src
-                requestAnimationFrame(() => {
-                    try {
-                        if (state.webview.getURL() !== url) {
-                            const loadResult = state.webview.loadURL(url);
-                            if (loadResult && typeof loadResult.catch === 'function') {
-                                loadResult.catch(() => {});
-                            }
-                        }
-                    } catch (_) {
-                        state.webview.setAttribute('src', url);
-                    }
-                });
-            }
-        }
+        });
     }
 
     /**
@@ -597,6 +908,8 @@ class BrowserManager {
         if (!state || !state.container) return;
         state.container.classList.remove('active');
         state.container.style.display = 'none';
+        this._setRemoteVisible(state, false);
+        this._stopInfoPolling(state);
     }
 
     /**
@@ -607,12 +920,14 @@ class BrowserManager {
             if (state.container && state.container.dataset.groupId === groupId) {
                 state.container.classList.remove('active');
                 state.container.style.display = 'none';
+                this._setRemoteVisible(state, false);
+                this._stopInfoPolling(state);
             }
         }
     }
 
     /**
-     * 移动浏览器容器到新分组（直接搬移 DOM，不重建 webview）
+     * 移动浏览器容器到新分组（直接搬移 DOM，不重建子 WebView）
      */
     moveContainerToGroup(uniqueKey, newGroupId) {
         const state = this.browserTabs.get(uniqueKey);
@@ -620,9 +935,8 @@ class BrowserManager {
 
         // 只更新分组 ID，DOM 节点由调用方通过 appendChild 搬移
         state.container.dataset.groupId = newGroupId;
-
-        // appendChild 会自动从旧父节点移除，标记需要恢复以兼容 webview 重挂载
-        state._needsContentRestore = true;
+        state.lastBounds = null;
+        this._scheduleSyncBounds(uniqueKey);
 
         return state.container;
     }
