@@ -1966,6 +1966,10 @@ class OICPPApp {
                 fileExplorer.setWorkspace(path);
             }
         }
+        // 工作区根目录变化后重新计算标签页路径
+        if (window.tabManager && typeof window.tabManager.refreshTabLabels === 'function') {
+            try { window.tabManager.refreshTabLabels(); } catch (err) { logWarn('刷新标签页路径失败:', err); }
+        }
     }
 
     clearWorkspace() {
@@ -1975,6 +1979,9 @@ class OICPPApp {
             if (fileExplorer) {
                 fileExplorer.clearWorkspace();
             }
+        }
+        if (window.tabManager && typeof window.tabManager.refreshTabLabels === 'function') {
+            try { window.tabManager.refreshTabLabels(); } catch (err) { logWarn('刷新标签页路径失败:', err); }
         }
     }
 
@@ -2694,30 +2701,10 @@ class OICPPApp {
             }
             
             if (!this.settings.compilerPath) {
-                if (process.platform !== 'win32') {
-                    try {
-                        const fs = require('fs');
-                        if (process.platform === 'darwin' && fs.existsSync('/usr/bin/clang++')) {
-                            this.settings.compilerPath = '/usr/bin/clang++';
-                            logInfo('[调试编译] macOS 自动使用 /usr/bin/clang++');
-                        } else if (process.platform === 'darwin' && fs.existsSync('/opt/homebrew/opt/llvm/bin/clang++')) {
-                            this.settings.compilerPath = '/opt/homebrew/opt/llvm/bin/clang++';
-                            logInfo('[调试编译] macOS 自动使用 /opt/homebrew/opt/llvm/bin/clang++');
-                        } else if (fs.existsSync('/usr/bin/g++')) {
-                            this.settings.compilerPath = '/usr/bin/g++';
-                            logInfo('[调试编译] 自动使用 /usr/bin/g++');
-                        } else if (fs.existsSync('/bin/g++')) {
-                            this.settings.compilerPath = '/bin/g++';
-                            logInfo('[调试编译] 自动使用 /bin/g++');
-                        }
-                    } catch (_) {}
-                }
-                if (!this.settings.compilerPath) {
-                    this.showMessage(this.t('message.setCompilerFirst', null, 'Please configure the compiler first'), 'warning');
-                    try { require('electron').ipcRenderer.send('menu-open-settings'); } catch(_) {}
-                    reject(new Error('请先设置编译器路径'));
-                    return;
-                }
+                this.showMessage(this.t('message.setCompilerFirst', null, 'Please configure the compiler first'), 'warning');
+                try { this.openCompilerSettings(); } catch (_) {}
+                reject(new Error('请先设置编译器路径'));
+                return;
             }
             
             let resolved = false;
@@ -4185,6 +4172,9 @@ ${data.message || '程序已加载，等待开始执行'}
     onFolderOpened(folderPath) {
         logInfo('文件夹已打开:', folderPath);
         
+        // 关闭欢迎页：它同时负责恢复编辑器区域与侧边栏的显示，
+        // 因此即使当前没有欢迎标签页也必须调用，否则会卡在欢迎页模式。
+        // closeWelcomePage 内部已保证不会误清空已激活文件标签的 activeTab。
         if (window.tabManager && typeof window.tabManager.closeWelcomePage === 'function') {
             logInfo('自动关闭欢迎页面');
             window.tabManager.closeWelcomePage();
@@ -4197,6 +4187,12 @@ ${data.message || '程序已加载，等待开始执行'}
             }
             
             window.sidebarManager.showPanel('files');
+        }
+
+        // 工作区根目录变化后重新计算标签页路径，
+        // 让工作区外的文件重新显示完整路径。
+        if (window.tabManager && typeof window.tabManager.refreshTabLabels === 'function') {
+            try { window.tabManager.refreshTabLabels(); } catch (err) { logWarn('刷新标签页路径失败:', err); }
         }
         
         const event = new CustomEvent('workspace-opened', {
@@ -4500,18 +4496,19 @@ ${data.message || '程序已加载，等待开始执行'}
             if (!window.tabManager) return;
             const tabs = [];
             for (const [key, tabData] of window.tabManager.tabs) {
-                if (tabData && tabData.filePath && !tabData.isTempFile) {
-                    tabs.push({
-                        filePath: tabData.filePath,
-                        fileName: tabData.fileName || '',
-                        groupId: tabData.groupId || '',
-                        viewType: tabData.viewType || 'code'
-                    });
-                }
+                if (!tabData || tabData.isWelcome || tabData.isTempFile) continue;
+                const filePath = typeof tabData.filePath === 'string' ? tabData.filePath : '';
+                // 云端文件无法在下次启动时从磁盘恢复，跳过以免产生恢复失败
+                if (!filePath || /^cloud:/i.test(filePath)) continue;
+                tabs.push({
+                    filePath,
+                    fileName: tabData.fileName || '',
+                    groupId: tabData.groupId || '',
+                    viewType: tabData.viewType || 'code'
+                });
             }
-            if (tabs.length > 0) {
-                await window.oicppApi.saveLastOpenTabs(tabs);
-            }
+            // 即使列表为空也要保存：否则关闭所有标签后重启会恢复上一次的旧会话
+            await window.oicppApi.saveLastOpenTabs(tabs);
         } catch (err) {
             logWarn('保存打开标签页失败:', err);
         }

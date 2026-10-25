@@ -191,6 +191,26 @@ fn user_icon_path(app: &AppHandle) -> String {
         .to_string()
 }
 
+/// Linux 下把随包图标复制到用户目录，保证窗口/快捷方式有稳定图标。
+#[cfg(target_os = "linux")]
+pub(crate) fn ensure_user_icon(app: &AppHandle) {
+    let target = paths::oicpp_dir().join("oicpp.ico");
+    if target.exists() {
+        return;
+    }
+    let source = paths::resource_dir(app).join("oicpp.ico");
+    if !source.exists() {
+        return;
+    }
+    if let Some(parent) = target.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::copy(&source, &target) {
+        Ok(_) => log_line("info", "[启动] 已复制图标到用户目录 (Linux)"),
+        Err(err) => log_line("warn", &format!("[启动] 复制 Linux 图标失败: {err}")),
+    }
+}
+
 // ------------------------------------------------------------------ 内置浏览器辅助
 
 fn resolve_browser_url(input: &str) -> String {
@@ -562,7 +582,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
 
         // ---- 设置窗口
-        "open-compiler-settings" => {
+        "open-compiler-settings" | "menu-open-settings" => {
             crate::open_settings_window(ipc.app, "compiler-settings", "compiler.html", "");
             Some(Ok(Value::Null))
         }
@@ -610,10 +630,16 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
 
         // ---- 工作区上报（渲染进程为唯一事实来源）
-        //
-        // 原实现把它存下来供「样例抓取 HTTP 服务」使用，该服务尚未移植，
-        // 因此这里只保留通道以免渲染层报未注册，不保存状态。
-        "workspace-path-report" => Some(Ok(Value::Null)),
+        // 外部打开文件时用它判断是否已有工作区，避免强行切换。
+        "workspace-path-report" => {
+            let path = ipc.string_arg(0);
+            crate::external_open::set_current_workspace(if path.trim().is_empty() {
+                None
+            } else {
+                Some(path)
+            });
+            Some(Ok(Value::Null))
+        }
 
         // ---- 请求转发（渲染层自行处理，这里只做日志）
         "request-new-file" | "request-open-file" | "request-save-file" => Some(Ok(Value::Null)),

@@ -35,6 +35,13 @@ struct WatcherEntry {
 static WATCHERS: Lazy<Mutex<HashMap<String, WatcherEntry>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// 退出时释放所有文件监听。
+pub(crate) fn shutdown_all_watchers() {
+    if let Ok(mut watchers) = WATCHERS.lock() {
+        watchers.clear();
+    }
+}
+
 // ------------------------------------------------------------------ 工具
 
 fn is_dir_like(path: &Path) -> bool {

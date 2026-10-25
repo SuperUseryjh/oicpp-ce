@@ -1,8 +1,9 @@
 //! 账号登录、云同步、日志上传等通道（对应 Electron 版 main.js 的认证与云 API 实现）。
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;
@@ -28,6 +29,10 @@ const CLIENT_LOG_UPLOAD_URL: &str = "https://oicpp.mywwzh.top/api/uploadClientLo
 
 static DEVICE_INFO: Lazy<Mutex<Option<(String, String)>>> = Lazy::new(|| Mutex::new(None));
 static LOGIN_BUSY: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+static AUTO_BACKUP_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static LAST_AUTO_BACKUP: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
+static HEARTBEAT_TASK: Lazy<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>> =
+    Lazy::new(|| Mutex::new(None));
 
 // ------------------------------------------------------------------ 工具
 
@@ -332,6 +337,172 @@ async fn latest_backup_info() -> Result<Value, String> {
     }))
 }
 
+// ------------------------------------------------------------------ 自动备份 / 心跳
+
+/// 把当前 settings.json 备份到云空间（不含账号信息）。
+pub async fn backup_settings_to_cloud() -> Value {
+    if login_token().is_empty() {
+        return json!({ "success": false, "error": "NOT_LOGGED_IN" });
+    }
+    let text = match std::fs::read_to_string(paths::settings_path()) {
+        Ok(text) => text,
+        Err(_) => return json!({ "success": false, "error": "NO_SETTINGS" }),
+    };
+    let mut payload: Value = match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(_) => return json!({ "success": false, "error": "NO_SETTINGS" }),
+    };
+    if let Some(map) = payload.as_object_mut() {
+        map.remove("account");
+    }
+
+    let (device_name, _) = device_info();
+    let sanitized = sanitize_device_name(&device_name);
+    let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let file_name = format!("OICPP_user_{stamp}_{sanitized}_settings.cpp");
+
+    // 先清理旧备份
+    if let Ok(data) = require_cloud_data("GET", "/cloudSync/list", None, None).await {
+        for item in cloud_list_items(&data) {
+            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if !is_settings_backup(name) {
+                continue;
+            }
+            let path = item
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or(name)
+                .to_string();
+            let _ = require_cloud_data(
+                "POST",
+                "/cloudSync/delete",
+                None,
+                Some(&json!({ "path": path })),
+            )
+            .await;
+        }
+    }
+
+    let body = json!({
+        "path": file_name,
+        "content": serde_json::to_string(&payload).unwrap_or_default()
+    });
+    match require_cloud_data("POST", "/cloudSync/upload", None, Some(&body)).await {
+        Ok(_) => json!({
+            "success": true,
+            "info": {
+                "fileName": file_name,
+                "path": file_name,
+                "timestampRaw": stamp,
+                "displayTime": stamp,
+                "deviceName": device_name
+            }
+        }),
+        Err(err) => json!({ "success": false, "error": err }),
+    }
+}
+
+/// 设置变更后触发自动备份。15 秒冷却，避免连续写入设置时反复上传。
+pub fn schedule_auto_settings_backup(_app: tauri::AppHandle) {
+    if !settings::get_bool("autoBackupSettings", false) || login_token().is_empty() {
+        return;
+    }
+    if AUTO_BACKUP_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Ok(guard) = LAST_AUTO_BACKUP.lock() {
+        if let Some(last) = *guard {
+            if last.elapsed() < Duration::from_secs(15) {
+                AUTO_BACKUP_IN_FLIGHT.store(false, Ordering::SeqCst);
+                return;
+            }
+        }
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let result = backup_settings_to_cloud().await;
+        let success = result
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if success {
+            if let Ok(mut guard) = LAST_AUTO_BACKUP.lock() {
+                *guard = Some(Instant::now());
+            }
+            crate::misc::log_line("info", "[设置备份] 自动备份成功");
+        } else {
+            let error = result
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("UNKNOWN");
+            if error != "NOT_LOGGED_IN" {
+                crate::misc::log_line(
+                    "warn",
+                    &format!("[设置备份] 自动备份失败: {error}"),
+                );
+            }
+        }
+        AUTO_BACKUP_IN_FLIGHT.store(false, Ordering::SeqCst);
+    });
+}
+
+async fn send_heartbeat(kind: &str) {
+    let logged_in_user = username();
+    let token = encoded_token(&logged_in_user);
+    let (device_name, cpu_id) = device_info();
+    let login_token = login_token();
+    let mut data = json!({
+        "type": kind,
+        "token": token,
+        "version": env!("CARGO_PKG_VERSION")
+    });
+    if let Some(map) = data.as_object_mut() {
+        if !login_token.is_empty() {
+            map.insert("login_token".into(), Value::String(login_token));
+        }
+        if kind == "start" {
+            map.insert("username".into(), Value::String(logged_in_user));
+            map.insert("device_name".into(), Value::String(device_name));
+            map.insert("cpu_id".into(), Value::String(cpu_id));
+        }
+    }
+
+    let _ = http_client()
+        .post(format!("{CLOUD_API_BASE}/heartbeat"))
+        .header("Content-Type", "application/json")
+        .timeout(Duration::from_secs(10))
+        .json(&data)
+        .send()
+        .await;
+}
+
+/// 登录后启动心跳：立即 start，之后每 30 分钟一次。
+pub fn start_heartbeat(app: &tauri::AppHandle) {
+    stop_heartbeat();
+    if username().is_empty() && login_token().is_empty() {
+        return;
+    }
+    let _ = app;
+    let task = tauri::async_runtime::spawn(async move {
+        send_heartbeat("start").await;
+        loop {
+            tokio::time::sleep(Duration::from_secs(30 * 60)).await;
+            send_heartbeat("heartbeat").await;
+        }
+    });
+    if let Ok(mut guard) = HEARTBEAT_TASK.lock() {
+        *guard = Some(task);
+    }
+}
+
+pub fn stop_heartbeat() {
+    if let Ok(mut guard) = HEARTBEAT_TASK.lock() {
+        if let Some(task) = guard.take() {
+            task.abort();
+        }
+    }
+}
+
 // ------------------------------------------------------------------ 登录流程
 
 async fn start_login(app: &tauri::AppHandle) -> Value {
@@ -498,6 +669,7 @@ async fn start_login(app: &tauri::AppHandle) -> Value {
                 }),
             );
             let _ = settings::save();
+            start_heartbeat(&handle);
             respond_html(&mut stream, "登录成功，请返回 OICPP IDE").await;
             broadcast_login_state(
                 &handle,
@@ -617,6 +789,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         "ide-logout" => {
             settings::set_value("account", Value::Null);
             let _ = settings::save();
+            stop_heartbeat();
             broadcast_login_state(
                 ipc.app,
                 json!({ "loggedIn": false, "user": Value::Null, "message": "已退出登录" }),
@@ -645,67 +818,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                 cloud_api(&method, &path, query.as_ref(), body.as_ref()).await,
             ))
         }
-        "backup-settings-to-cloud" => {
-            if login_token().is_empty() {
-                return Some(Ok(json!({ "success": false, "error": "NOT_LOGGED_IN" })));
-            }
-            let text = match std::fs::read_to_string(paths::settings_path()) {
-                Ok(text) => text,
-                Err(_) => return Some(Ok(json!({ "success": false, "error": "NO_SETTINGS" }))),
-            };
-            let mut payload: Value = match serde_json::from_str(&text) {
-                Ok(value) => value,
-                Err(_) => return Some(Ok(json!({ "success": false, "error": "NO_SETTINGS" }))),
-            };
-            if let Some(map) = payload.as_object_mut() {
-                map.remove("account");
-            }
-
-            let (device_name, _) = device_info();
-            let sanitized = sanitize_device_name(&device_name);
-            let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-            let file_name = format!("OICPP_user_{stamp}_{sanitized}_settings.cpp");
-
-            // 先清理旧备份
-            if let Ok(data) = require_cloud_data("GET", "/cloudSync/list", None, None).await {
-                for item in cloud_list_items(&data) {
-                    let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    if !is_settings_backup(name) {
-                        continue;
-                    }
-                    let path = item
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(name)
-                        .to_string();
-                    let _ = require_cloud_data(
-                        "POST",
-                        "/cloudSync/delete",
-                        None,
-                        Some(&json!({ "path": path })),
-                    )
-                    .await;
-                }
-            }
-
-            let body = json!({
-                "path": file_name,
-                "content": serde_json::to_string(&payload).unwrap_or_default()
-            });
-            match require_cloud_data("POST", "/cloudSync/upload", None, Some(&body)).await {
-                Ok(_) => Some(Ok(json!({
-                    "success": true,
-                    "info": {
-                        "fileName": file_name,
-                        "path": file_name,
-                        "timestampRaw": stamp,
-                        "displayTime": stamp,
-                        "deviceName": device_name
-                    }
-                }))),
-                Err(err) => Some(Ok(json!({ "success": false, "error": err }))),
-            }
-        }
+        "backup-settings-to-cloud" => Some(Ok(backup_settings_to_cloud().await)),
         "get-settings-backup-info" => match latest_backup_info().await {
             Ok(info) => Some(Ok(json!({ "success": true, "info": info }))),
             Err(err) => Some(Ok(json!({ "success": false, "error": err }))),
@@ -748,6 +861,8 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             crate::events::broadcast_one(ipc.app, "settings-applied", merged);
             Some(Ok(json!({ "success": true, "info": info })))
         }
+        // 上游 Electron 也没有实现反馈上传接口；当前 UI 直接打开 GitHub Issues，
+        // 这里保留明确的“未开放”响应，避免调用方误以为已发送。
         "send-feedback" => Some(Ok(json!({
             "success": false,
             "message": "反馈通道当前版本暂未开放"

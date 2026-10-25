@@ -177,21 +177,32 @@ fn pick_installer(files: &[Value]) -> Option<Value> {
     None
 }
 
-/// 清理 `~/.oicpp` 下的旧安装包
-fn cleanup_old_installers() {
+/// 清理 `~/.oicpp` 下的旧安装包，保留正在等待安装的那一个。
+fn cleanup_old_installers(keep: Option<&str>) {
     let dir = paths::oicpp_dir();
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return;
     };
     for entry in entries.flatten() {
+        let path = entry.path();
+        if let Some(keep) = keep {
+            if path.to_string_lossy() == keep {
+                continue;
+            }
+        }
         let name = entry.file_name().to_string_lossy().to_string();
         let lower = name.to_lowercase();
         let is_installer = (lower.starts_with("oicpp") && lower.contains("setup") && lower.ends_with(".exe"))
             || (lower.starts_with("oicpp") && (lower.ends_with(".deb") || lower.ends_with(".rpm") || lower.ends_with(".dmg") || lower.ends_with(".pkg")));
         if is_installer {
-            let _ = std::fs::remove_file(entry.path());
+            let _ = std::fs::remove_file(path);
         }
     }
+}
+
+fn pending_installer_path() -> Option<String> {
+    pending_update()
+        .and_then(|value| value.get("installerPath").and_then(|v| v.as_str()).map(String::from))
 }
 
 async fn download_installer(app: &AppHandle, url: &str, dest: &Path, version: &str) -> Result<(), String> {
@@ -247,6 +258,9 @@ async fn download_installer(app: &AppHandle, url: &str, dest: &Path, version: &s
 // ------------------------------------------------------------------ 主流程
 
 pub async fn check_updates(app: &AppHandle, is_manual: bool) {
+    if prune_stale_pending_update() {
+        broadcast_state(app);
+    }
     if pending_install() {
         if is_manual {
             crate::dlg::message(
@@ -396,7 +410,7 @@ async fn download_and_install(
         return;
     }
 
-    cleanup_old_installers();
+    cleanup_old_installers(pending_installer_path().as_deref());
     let installer_path: PathBuf = paths::oicpp_dir().join(&name);
 
     if !installer_path.exists() {
@@ -441,8 +455,38 @@ async fn download_and_install(
             "downloadTime": paths::iso_now()
         }),
     );
+    settings::set_value(
+        "postInstallNotice",
+        json!({
+            "targetVersion": latest,
+            "description": description,
+            "source": "download",
+            "armedAt": paths::iso_now()
+        }),
+    );
     let _ = settings::save();
     broadcast_state(app);
+
+    #[cfg(target_os = "linux")]
+    {
+        let app = app.clone();
+        let path = installer_path.clone();
+        tauri::async_runtime::spawn(async move {
+            if crate::dlg::confirm(
+                &app,
+                "更新已下载",
+                "安装包已下载完成。是否打开安装包所在目录？",
+                "打开目录",
+                "稍后",
+            )
+            .await
+            {
+                if let Some(parent) = path.parent() {
+                    let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+                }
+            }
+        });
+    }
 }
 
 fn url_encode(input: &str) -> String {
@@ -472,6 +516,18 @@ pub fn run_pending_installer_on_quit() {
     if !Path::new(path).exists() {
         return;
     }
+    if let Some(version) = pending.get("version").and_then(|v| v.as_str()) {
+        settings::set_value(
+            "postInstallNotice",
+            json!({
+                "targetVersion": version,
+                "description": pending.get("description").cloned().unwrap_or(Value::String(String::new())),
+                "source": "quit-install",
+                "armedAt": paths::iso_now()
+            }),
+        );
+        let _ = settings::save();
+    }
     let mut command = std::process::Command::new(path);
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::null());
@@ -485,6 +541,73 @@ pub fn run_pending_installer_on_quit() {
     let _ = command.spawn();
 }
 
+/// 启动维护：安装后提示、清理旧安装包、清理已失效的 pendingUpdate。
+pub fn handle_startup(app: &AppHandle) {
+    prune_stale_pending_update();
+    show_post_install_notice(app);
+    cleanup_old_installers(pending_installer_path().as_deref());
+}
+
+/// 安装包被删除/移动后，pendingUpdate 会让 check_updates 永远提前返回。
+fn prune_stale_pending_update() -> bool {
+    let Some(pending) = pending_update() else {
+        return false;
+    };
+    let path = pending
+        .get("installerPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if path.is_empty() || !Path::new(path).exists() {
+        settings::set_value("pendingUpdate", Value::Null);
+        let _ = settings::save();
+        return true;
+    }
+    false
+}
+
+fn show_post_install_notice(app: &AppHandle) {
+    let Some(notice) = settings::get_value("postInstallNotice").filter(|v| !v.is_null()) else {
+        return;
+    };
+    let target = notice
+        .get("targetVersion")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let current = env!("CARGO_PKG_VERSION");
+    if target != current {
+        return;
+    }
+    let description = notice
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .replace("\\n", "\n");
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let detail = if description.trim().is_empty() {
+            "本次更新未提供额外更新说明。".to_string()
+        } else {
+            description
+        };
+        crate::dlg::message(
+            &app,
+            &format!("OICPP IDE 已更新到 {current}"),
+            &detail,
+        )
+        .await;
+        settings::set_value("postInstallNotice", Value::Null);
+        let pending_matches = pending_update()
+            .and_then(|value| value.get("version").and_then(|v| v.as_str()).map(String::from))
+            .map(|version| version == current)
+            .unwrap_or(false);
+        if pending_matches {
+            settings::set_value("pendingUpdate", Value::Null);
+        }
+        let _ = settings::save();
+        broadcast_state(&app);
+    });
+}
+
 // ------------------------------------------------------------------ IPC
 
 /// `get-update-download-status` / `check-updates-manual` 由 `misc` 模块转发到本模块，
@@ -493,15 +616,18 @@ pub async fn dispatch(_ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
     None
 }
 
-/// 启动后的自动检查（延迟执行，避免和窗口加载抢资源）
+/// 启动后的自动检查（延迟执行，避免和窗口加载抢资源），之后每 3 小时检查一次。
 pub fn schedule_auto_check(app: &AppHandle) {
-    mutate_state(|state| state.auto_checking = true);
-    broadcast_state(app);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(10)).await;
-        check_updates(&handle, false).await;
-        mutate_state(|state| state.auto_checking = false);
-        broadcast_state(&handle);
+        loop {
+            mutate_state(|state| state.auto_checking = true);
+            broadcast_state(&handle);
+            check_updates(&handle, false).await;
+            mutate_state(|state| state.auto_checking = false);
+            broadcast_state(&handle);
+            tokio::time::sleep(Duration::from_secs(3 * 60 * 60)).await;
+        }
     });
 }

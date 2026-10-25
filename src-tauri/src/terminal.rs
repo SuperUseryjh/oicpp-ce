@@ -466,6 +466,15 @@ fn kill_session(id: &str) -> bool {
     true
 }
 
+/// 退出时结束所有 PTY 会话。
+pub(crate) fn shutdown_all() {
+    if let Ok(mut sessions) = SESSIONS.lock() {
+        for (_, mut session) in sessions.drain() {
+            let _ = session.killer.kill();
+        }
+    }
+}
+
 fn list_sessions() -> Vec<Value> {
     let sessions = SESSIONS.lock().unwrap();
     sessions

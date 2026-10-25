@@ -447,6 +447,10 @@ fn stop() {
     }
 }
 
+pub(crate) fn shutdown() {
+    stop();
+}
+
 // ------------------------------------------------------------------ 请求 / 通知
 
 async fn request(method: String, params: Value) -> Option<Result<Value, String>> {

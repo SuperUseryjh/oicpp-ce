@@ -101,6 +101,46 @@
         /// 原始通道发送（不等结果）。给需要直达 Rust 通道的场景用，例如调试面板上报状态。
         send: function (channel, args) {
             return send(channel, args);
+        },
+
+        // 内置浏览器：Rust 子 WebView 控制。
+        browserViewCreate: function (options) {
+            return invoke('browser-webview-create', [options]);
+        },
+        browserViewSetBounds: function (options) {
+            return invoke('browser-webview-set-bounds', [options]);
+        },
+        browserViewSetVisible: function (options) {
+            return invoke('browser-webview-set-visible', [options]);
+        },
+        browserViewState: function (options) {
+            return invoke('browser-webview-state', [options]);
+        },
+        browserViewNavigate: function (options) {
+            return invoke('browser-webview-navigate', [options]);
+        },
+        browserViewAction: function (options) {
+            return invoke('browser-webview-action', [options]);
+        },
+        browserViewClose: function (options) {
+            return invoke('browser-webview-close', [options]);
+        },
+
+        // clangd JSON-RPC。
+        lspStart: function (options) {
+            return invoke('lsp-start', [options]);
+        },
+        lspStop: function () {
+            return invoke('lsp-stop', []);
+        },
+        lspRestart: function (options) {
+            return invoke('lsp-restart', [options]);
+        },
+        lspRequest: function (method, params) {
+            return invoke('lsp-request', [method, params]);
+        },
+        lspNotify: function (method, params) {
+            return invoke('lsp-notify', [method, params]);
         }
     };
 

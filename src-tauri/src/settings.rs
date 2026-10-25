@@ -2,6 +2,7 @@
 //!
 //! 与 Electron 版保持一致：全部设置都保存在 `~/.oicpp/settings.json` 的单个 JSON 对象里。
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -310,12 +311,42 @@ fn normalize_runtime_shape(mut settings: Value) -> Value {
 
 // ------------------------------------------------------------------ 持久化
 
+#[cfg(target_os = "linux")]
+fn restore_linux_settings_backup() {
+    let backup = PathBuf::from("/tmp/oicpp_backup/settings.json");
+    if !backup.exists() {
+        return;
+    }
+    let target = paths::settings_path();
+    let need_restore = !target.exists()
+        || std::fs::metadata(&target)
+            .map(|meta| meta.len() < 10)
+            .unwrap_or(true);
+    if need_restore {
+        if let Some(parent) = target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::copy(&backup, &target) {
+            Ok(_) => crate::misc::log_line("info", "[启动] 已从临时备份恢复 settings.json"),
+            Err(err) => crate::misc::log_line(
+                "warn",
+                &format!("[启动] 恢复 Linux 设置备份失败: {err}"),
+            ),
+        }
+    }
+    let _ = std::fs::remove_file(&backup);
+}
+
 pub fn load() {
+    #[cfg(target_os = "linux")]
+    restore_linux_settings_backup();
+
     let defaults = default_settings();
     let path = paths::settings_path();
     let loaded = std::fs::read_to_string(&path)
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let had_settings = loaded.is_some();
 
     match loaded {
         Some(value) => {
@@ -324,9 +355,47 @@ pub fn load() {
         }
         None => {
             replace(defaults);
-            let _ = save();
         }
     }
+
+    // 非 Windows 首次启动时自动探测系统编译器，避免用户必须先手动配置。
+    if ensure_compiler_path() || !had_settings {
+        let _ = save();
+    }
+}
+
+/// 非 Windows 平台的编译器候选路径（按优先级排序）。
+fn compiler_candidates() -> Vec<&'static str> {
+    if paths::is_windows() {
+        return Vec::new();
+    }
+    if paths::is_macos() {
+        vec![
+            "/usr/bin/clang++",
+            "/opt/homebrew/opt/llvm/bin/clang++",
+            "/usr/local/opt/llvm/bin/clang++",
+            "/usr/bin/g++",
+            "/usr/local/bin/g++",
+        ]
+    } else {
+        vec!["/usr/bin/g++", "/usr/bin/clang++", "/bin/g++"]
+    }
+}
+
+/// compilerPath 为空时尝试探测并写入设置。返回是否有变更。
+fn ensure_compiler_path() -> bool {
+    if !get_str("compilerPath").trim().is_empty() {
+        return false;
+    }
+    let Some(path) = compiler_candidates()
+        .into_iter()
+        .find(|candidate| PathBuf::from(candidate).is_file())
+    else {
+        return false;
+    };
+    set_value("compilerPath", Value::String(path.to_string()));
+    crate::misc::log_line("info", &format!("[设置] 自动探测编译器: {path}"));
+    true
 }
 
 pub fn save() -> Result<(), String> {
@@ -465,6 +534,10 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
         "update-settings" => {
             let incoming = ipc.object_arg(0);
+            let theme = incoming
+                .get("theme")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
             update(|settings| {
                 if let Some(map) = settings.as_object_mut() {
                     for (key, value) in incoming {
@@ -480,9 +553,13 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             if let Err(err) = save() {
                 return ipc.fail(err);
             }
+            crate::cloud::schedule_auto_settings_backup(ipc.app.clone());
             crate::misc::apply_window_visuals(ipc.app);
             let snapshot = all();
             ipc.emit_one("settings-applied", snapshot);
+            if let Some(theme) = theme {
+                broadcast_to_settings_windows(ipc.app, "theme-changed", Value::String(theme));
+            }
             Some(Ok(json!({ "success": true })))
         }
         "updateSettings" | "update-top-level-settings" | "update-editor-settings" => {
@@ -493,9 +570,14 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                 .get("language")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            let theme = incoming
+                .get("theme")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             if let Err(err) = save() {
                 return ipc.fail(err);
             }
+            crate::cloud::schedule_auto_settings_backup(ipc.app.clone());
             if has_keybindings {
                 crate::menu::rebuild(ipc.app);
             }
@@ -504,6 +586,9 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             ipc.emit("settings-changed", vec![Value::Null, snapshot.clone()]);
             if let Some(language) = language {
                 broadcast_to_settings_windows(ipc.app, "language-changed", Value::String(language));
+            }
+            if let Some(theme) = theme {
+                broadcast_to_settings_windows(ipc.app, "theme-changed", Value::String(theme));
             }
             Some(Ok(json!({ "success": true })))
         }
@@ -591,7 +676,10 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
             let value = ipc.arg(1).cloned().unwrap_or(Value::Null);
             set_value(&key, value);
             match save() {
-                Ok(_) => Some(Ok(json!({ "success": true }))),
+                Ok(_) => {
+                    crate::cloud::schedule_auto_settings_backup(ipc.app.clone());
+                    Some(Ok(json!({ "success": true })))
+                }
                 Err(err) => Some(Ok(json!({ "success": false, "error": err }))),
             }
         }

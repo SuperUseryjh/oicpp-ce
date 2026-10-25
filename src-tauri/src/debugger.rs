@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
 use crate::events;
@@ -21,6 +21,65 @@ use crate::paths;
 
 const GDB_PROMPT: &str = ">>>>>>oicpp_gdb:";
 const SYNC_TIMEOUT_MS: u64 = 4000;
+
+/// 前端 `start-debug` 传入的调试选项。
+#[derive(Debug, Clone)]
+struct DebugOptions {
+    run_mode: String,
+    use_input_bridge: bool,
+    terminal_id: String,
+    inferior_tty: String,
+    no_new_console: bool,
+}
+
+impl DebugOptions {
+    fn from_map(options: &Map<String, Value>) -> Self {
+        let requested_run_mode = options
+            .get("runMode")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let run_mode = if requested_run_mode.is_empty() {
+            crate::settings::run_mode()
+        } else {
+            crate::settings::normalize_run_mode(&requested_run_mode)
+        };
+        let use_input_bridge = options
+            .get("useInputBridge")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let terminal_id = options
+            .get("terminalId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let inferior_tty = options
+            .get("inferiorTTY")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        Self {
+            no_new_console: run_mode == "integrated-terminal" || use_input_bridge,
+            run_mode,
+            use_input_bridge,
+            terminal_id,
+            inferior_tty,
+        }
+    }
+}
+
+fn escape_gdb_path(path: &str) -> String {
+    let path = if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    path.replace('"', "\\\"")
+}
 
 struct GdbSession {
     child: Child,
@@ -104,7 +163,7 @@ fn parse_locals(text: &str) -> Value {
 
 fn parse_backtrace(text: &str) -> Vec<Value> {
     let pattern = regex::Regex::new(
-        r"^#(?P<level>\d+)\s+(?:0x[0-9a-fA-F]+\s+in\s+)?(?P<func>[^\s(]+)\s*(?:\(.*?\))?\s*(?:at\s+(?P<file>[^:\r\n]+):(?P<line>\d+))?",
+        r"^#(?P<level>\d+)\s+(?:0x[0-9a-fA-F]+\s+in\s+)?(?P<func>[^\s(]+)\s*(?:\(.*?\))?\s*(?:at\s+(?P<file>.+?):(?P<line>\d+))?\s*$",
     )
     .ok();
     let mut frames = Vec::new();
@@ -167,6 +226,10 @@ fn handle_response(response: &str) {
                 "debug-breakpoint-hit",
                 json!({ "file": file, "line": line, "address": address }),
             );
+            crate::misc::log_line(
+                "info",
+                &format!("[调试] 断点命中: {file}:{line} ({address})"),
+            );
             refresh_variables_soon();
         }
     }
@@ -185,10 +248,35 @@ fn handle_response(response: &str) {
                 "debug-stopped",
                 json!({ "reason": "program-exited", "exitCode": exit_code }),
             );
+        } else if text.contains("exited normally") {
+            INFERIOR_RUNNING.store(false, Ordering::SeqCst);
+            broadcast_one("debug-program-exited", json!({ "exitCode": 0 }));
+            std::thread::sleep(Duration::from_millis(100));
+            broadcast_one(
+                "debug-stopped",
+                json!({ "reason": "program-exited", "exitCode": 0 }),
+            );
+        } else if let Some(line) = text
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("Program received signal") || line.starts_with("Program terminated with signal"))
+        {
+            INFERIOR_RUNNING.store(false, Ordering::SeqCst);
+            let signal = line
+                .split_whitespace()
+                .nth(3)
+                .unwrap_or("")
+                .trim_end_matches(',')
+                .to_string();
+            broadcast_one(
+                "debug-stopped",
+                json!({
+                    "reason": "signal-received",
+                    "signal": signal,
+                    "message": line
+                }),
+            );
         }
-    } else if text.contains("exited normally") {
-        INFERIOR_RUNNING.store(false, Ordering::SeqCst);
-        broadcast_one("debug-program-exited", json!({ "exitCode": 0 }));
     }
 }
 
@@ -286,9 +374,8 @@ fn start_reader(stdout: std::process::ChildStdout) {
                 let Some(response) = split_response(&mut accumulator) else {
                     break;
                 };
-                if !response.trim().is_empty() {
-                    handle_response(&response);
-                }
+                // 即使命令没有输出，也要入队：send_sync 依赖“一命令一响应”保持同步。
+                handle_response(&response);
             }
 
             // 没有完整提示符：运行中的程序输出需及时转发，但不能把 GDB 控制消息
@@ -304,6 +391,34 @@ fn start_reader(stdout: std::process::ChildStdout) {
                     broadcast_one("debug-terminal-output", json!({ "data": data }));
                 }
             }
+        }
+
+        let session_alive = GDB.lock().map(|guard| guard.is_some()).unwrap_or(false);
+        INFERIOR_RUNNING.store(false, Ordering::SeqCst);
+        if session_alive {
+            broadcast_one("debug-stopped", json!({ "reason": "exited" }));
+        }
+    });
+}
+
+fn start_stderr_reader(mut stderr: std::process::ChildStderr) {
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 4096];
+        loop {
+            let read = match stderr.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            let text = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let trimmed = text.trim();
+            if trimmed.is_empty() || trimmed.contains("Failed to set controlling terminal") {
+                continue;
+            }
+            broadcast_one(
+                "debug-output",
+                json!({ "message": trimmed, "type": "stderr" }),
+            );
         }
     });
 }
@@ -446,7 +561,24 @@ fn resolve_executable(file_path: &str) -> String {
     base
 }
 
-async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, String> {
+async fn start_session(
+    file_path: &str,
+    breakpoints: Vec<i64>,
+    options: DebugOptions,
+) -> Result<Value, String> {
+    if paths::is_macos() {
+        return Err("macOS 暂不支持调试功能。".to_string());
+    }
+    if paths::is_linux()
+        && options.run_mode == "integrated-terminal"
+        && !options.use_input_bridge
+        && options.inferior_tty.is_empty()
+    {
+        return Err(
+            "Linux 内置终端调试初始化失败：未获取到终端 TTY，请先重试调试启动。".to_string(),
+        );
+    }
+
     stop_session();
 
     let executable = resolve_executable(file_path);
@@ -488,6 +620,14 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
         }
     }
 
+    // 应用本身是 GUI 程序；给 GDB 隐藏控制台，但 inferior 仍可通过
+    // `set new-console on` 创建自己的控制台窗口。
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+
     let mut child = command
         .spawn()
         .map_err(|e| format!("启动 GDB 失败: {e}"))?;
@@ -497,6 +637,10 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
         .stdout
         .take()
         .ok_or_else(|| "无法获取 GDB 输出流".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法获取 GDB 错误流".to_string())?;
     let pid = child.id() as i64;
 
     if let Ok(mut guard) = RESPONSES.lock() {
@@ -506,9 +650,41 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
     INFERIOR_RUNNING.store(false, Ordering::SeqCst);
 
     start_reader(stdout);
+    start_stderr_reader(stderr);
 
-    // 初始化
-    write_command(&format!("set prompt {GDB_PROMPT}"))?;
+    if let Err(err) = initialize_session(&options, &executable, file_path, &breakpoints).await {
+        stop_session();
+        return Err(err);
+    }
+
+    crate::misc::log_line(
+        "info",
+        &format!(
+            "[调试] 会话已启动: {file_path} -> {executable} (gdb pid={pid}, mode={})",
+            options.run_mode
+        ),
+    );
+
+    Ok(json!({
+        "success": true,
+        "file": file_path,
+        "executable": executable,
+        "process": pid,
+        "mode": options.run_mode,
+        "terminalId": options.terminal_id,
+        "useInputBridge": options.use_input_bridge,
+        "inferiorTTY": options.inferior_tty
+    }))
+}
+
+async fn initialize_session(
+    options: &DebugOptions,
+    executable: &str,
+    source_path: &str,
+    breakpoints: &[i64],
+) -> Result<(), String> {
+    // 先建立提示符并逐条等待响应，确保后面的发送/响应严格对齐。
+    let _ = send_sync(&format!("set prompt {GDB_PROMPT}")).await;
     for init in [
         "show version",
         "set confirm off",
@@ -523,22 +699,65 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
         "set print pretty on",
         "set print array-indexes on",
     ] {
-        let _ = write_command(init);
+        let _ = send_sync(init).await;
     }
     let _ = send_sync("echo ready").await;
+
+    #[cfg(windows)]
+    {
+        let new_console = if options.no_new_console { "off" } else { "on" };
+        let _ = send_sync(&format!("set new-console {new_console}")).await;
+    }
+
+    #[cfg(unix)]
+    if paths::is_linux() && !options.inferior_tty.is_empty() && !options.use_input_bridge {
+        let tty = options.inferior_tty.trim();
+        match send_sync(&format!("set inferior-tty {tty}")).await {
+            Ok(response) => {
+                let lower = response.to_lowercase();
+                if lower.contains("no such file") || lower.contains("cannot") {
+                    broadcast_one(
+                        "debug-output",
+                        json!({
+                            "message": format!("设置 inferior-tty 失败: {}", response.trim()),
+                            "type": "warning"
+                        }),
+                    );
+                }
+            }
+            Err(err) => {
+                broadcast_one(
+                    "debug-output",
+                    json!({
+                        "message": format!("设置 inferior-tty 失败: {err}"),
+                        "type": "warning"
+                    }),
+                );
+            }
+        }
+    }
+
+    let escaped = escape_gdb_path(executable);
+    let file_response = send_sync(&format!("file \"{escaped}\"")).await?;
+    let lower = file_response.to_lowercase();
+    if lower.contains("no such file")
+        || lower.contains("cannot open")
+        || lower.contains("not in executable format")
+    {
+        return Err(format!("加载可执行文件失败: {}", file_response.trim()));
+    }
 
     if let Ok(mut guard) = BREAKPOINTS.lock() {
         guard.clear();
     }
     if let Ok(mut guard) = CURRENT_FILE.lock() {
-        *guard = Some(file_path.to_string());
+        *guard = Some(source_path.to_string());
     }
 
-    for line in &breakpoints {
-        let _ = add_breakpoint(file_path, *line).await;
+    for line in breakpoints {
+        let _ = add_breakpoint(source_path, *line).await;
     }
 
-    let mode = crate::settings::run_mode();
     broadcast_one(
         "debug-ready-waiting",
         json!({
@@ -547,22 +766,40 @@ async fn start_session(file_path: &str, breakpoints: Vec<i64>) -> Result<Value, 
         }),
     );
 
-    Ok(json!({
-        "success": true,
-        "file": file_path,
-        "executable": executable,
-        "process": pid,
-        "mode": mode
-    }))
+    Ok(())
 }
 
 fn stop_session() {
-    INFERIOR_RUNNING.store(false, Ordering::SeqCst);
+    let _was_running = INFERIOR_RUNNING.swap(false, Ordering::SeqCst);
     let session = GDB.lock().ok().and_then(|mut guard| guard.take());
     if let Some(mut session) = session {
+        let pid = session.child.id();
+
+        #[cfg(unix)]
+        if _was_running {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGINT);
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
         let _ = session.stdin.write_all(b"quit\n");
         let _ = session.stdin.flush();
         std::thread::sleep(Duration::from_millis(200));
+
+        // Windows 下 GDB 可能已经把 inferior 放到独立控制台，按进程树清理。
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .arg("/PID")
+                .arg(pid.to_string())
+                .arg("/T")
+                .arg("/F")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+
         let _ = session.child.kill();
         let _ = session.child.wait();
     }
@@ -575,7 +812,8 @@ fn stop_session() {
 }
 
 async fn add_breakpoint(file: &str, line: i64) -> Result<(), String> {
-    let response = send_sync(&format!("break \"{file}:{line}\"")).await?;
+    let escaped = escape_gdb_path(file);
+    let response = send_sync(&format!("break \"{escaped}:{line}\"")).await?;
     let number = regex::Regex::new(r"Breakpoint (\d+)")
         .ok()
         .and_then(|re| re.captures(&response))
@@ -657,8 +895,9 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                         .collect()
                 })
                 .unwrap_or_default();
+            let debug_options = DebugOptions::from_map(&options);
 
-            match start_session(&file_path, lines).await {
+            match start_session(&file_path, lines, debug_options).await {
                 Ok(result) => {
                     broadcast_one("debug-started", result.clone());
                     Some(Ok(result))
@@ -671,8 +910,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         }
         "stop-debug" => {
             stop_session();
-            let _ = collect_variables().await;
-            broadcast_one("debug-stopped", json!({ "success": true }));
+            broadcast_one("debug-stopped", json!({ "success": true, "reason": "manual-stop" }));
             Some(Ok(json!({ "success": true })))
         }
         "debug-step-over" | "debug-step-into" | "debug-step-out" | "debug-continue" => {
@@ -690,6 +928,7 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                     Some(Ok(json!({ "success": true })))
                 }
                 Err(err) => {
+                    INFERIOR_RUNNING.store(false, Ordering::SeqCst);
                     broadcast_one("debug-error", json!(err.clone()));
                     Some(Err(err))
                 }
@@ -701,9 +940,11 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
                 Ok(_) => {
                     broadcast_one("debug-output", json!({ "message": "程序已启动", "type": "debug" }));
                     broadcast_empty_local("debug-running");
+                    crate::misc::log_line("info", "[调试] 执行 run");
                     Some(Ok(json!({ "success": true })))
                 }
                 Err(err) => {
+                    INFERIOR_RUNNING.store(false, Ordering::SeqCst);
                     broadcast_one("debug-error", json!(err.clone()));
                     Some(Err(err))
                 }
@@ -790,7 +1031,13 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         },
         "debug-request-callstack" => {
             let response = send_sync("bt 30").await.unwrap_or_default();
-            Some(Ok(Value::Array(parse_backtrace(&response))))
+            let frames = Value::Array(parse_backtrace(&response));
+            crate::misc::log_line(
+                "info",
+                &format!("[调试] 调用栈帧数: {}", frames.as_array().map(Vec::len).unwrap_or(0)),
+            );
+            broadcast_one("debug-callstack-updated", frames.clone());
+            Some(Ok(frames))
         }
         "debug-goto-frame" => {
             let frame = ipc.arg(0).cloned().unwrap_or(Value::Null);
@@ -925,4 +1172,104 @@ fn broadcast_empty_local(channel: &str) {
 /// 清理入口：应用退出时终止 gdb
 pub fn shutdown() {
     stop_session();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tool_available(name: &str) -> bool {
+        Command::new(name)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    #[ignore = "需要可用的 gdb/g++；通过 OICPP_TEST_TOOLCHAIN_DIR 指定工具链后运行 --ignored"]
+    async fn gdb_session_loads_file_and_hits_breakpoint() {
+        // 允许通过环境变量指定一套可用的 gdb/g++，避免测试进程自身被测试工具链的 DLL 影响。
+        if let Ok(toolchain_dir) = std::env::var("OICPP_TEST_TOOLCHAIN_DIR") {
+            let mut paths = vec![PathBuf::from(toolchain_dir)];
+            if let Some(existing) = std::env::var_os("PATH") {
+                paths.extend(std::env::split_paths(&existing));
+            }
+            if let Ok(joined) = std::env::join_paths(paths) {
+                std::env::set_var("PATH", joined);
+            }
+        }
+
+        if !tool_available("gdb") || !tool_available("g++") {
+            eprintln!("跳过 GDB 冒烟测试：当前环境没有可用的 gdb/g++");
+            return;
+        }
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("gdb-smoke");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create gdb smoke dir");
+
+        let source = root.join("smoke.cpp");
+        std::fs::write(
+            &source,
+            "int main() {\n    int x = 1;\n    x += 2;\n    return x - 3;\n}\n",
+        )
+        .expect("write source");
+        let executable = root.join(if cfg!(windows) { "smoke.exe" } else { "smoke" });
+        let compile = Command::new("g++")
+            .arg("-g")
+            .arg("-O0")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .expect("run g++");
+        assert!(compile.success(), "g++ compile failed");
+
+        let options = DebugOptions {
+            run_mode: "popup".to_string(),
+            use_input_bridge: false,
+            terminal_id: String::new(),
+            inferior_tty: String::new(),
+            no_new_console: true,
+        };
+        let result = start_session(source.to_str().unwrap(), vec![3], options)
+            .await
+            .expect("start gdb session");
+        assert_eq!(result.get("success").and_then(|value| value.as_bool()), Some(true));
+
+        INFERIOR_RUNNING.store(true, Ordering::SeqCst);
+        let run_response = send_sync("run").await.expect("gdb run");
+        assert!(
+            run_response.to_lowercase().contains("breakpoint")
+                || run_response.to_lowercase().contains("main"),
+            "unexpected run response: {run_response}"
+        );
+        assert!(
+            !INFERIOR_RUNNING.load(Ordering::SeqCst),
+            "breakpoint hit should reset inferior running state"
+        );
+
+        let variables = collect_variables().await.expect("collect variables");
+        assert!(
+            variables
+                .get("local")
+                .and_then(|local| local.get("x"))
+                .is_some(),
+            "expected local variable x, got: {variables}"
+        );
+
+        let backtrace = send_sync("bt 30").await.expect("gdb backtrace");
+        assert!(
+            !parse_backtrace(&backtrace).is_empty(),
+            "expected backtrace frames, got: {backtrace}"
+        );
+
+        stop_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

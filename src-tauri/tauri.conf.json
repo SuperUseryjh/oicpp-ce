@@ -38,6 +38,15 @@
       "resources/oicpp.ico": "oicpp.ico",
       "resources/clangd/**/*": "clangd/"
     },
+    "fileAssociations": [
+      {
+        "ext": ["cpp"],
+        "name": "OICPPIDE.cpp",
+        "description": "OICPP IDE C++ 源文件",
+        "role": "Editor",
+        "mimeType": "text/x-c++src"
+      }
+    ],
     "shortDescription": "OICPP IDE for competitive programming",
     "longDescription": "OICPP IDE 是针对信息学竞赛打造的一体化集成开发环境",
     "linux": {
@@ -50,7 +59,8 @@
     },
     "windows": {
       "nsis": {
-        "installMode": "both"
+        "installMode": "both",
+        "installerHooks": "installer-hooks.nsh"
       }
     }
   }

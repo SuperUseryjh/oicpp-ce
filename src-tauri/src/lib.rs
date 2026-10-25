@@ -15,6 +15,7 @@ mod debugger;
 mod dlg;
 mod download;
 mod events;
+mod external_open;
 mod fsops;
 mod fsread;
 mod inject;
@@ -23,6 +24,7 @@ mod lsp;
 mod menu;
 mod misc;
 mod paths;
+mod sampletester;
 mod settings;
 mod terminal;
 mod toolchain;
@@ -192,7 +194,7 @@ fn restorable_workspace() -> Option<String> {
         })
 }
 
-fn has_restorable_workspace() -> bool {
+pub(crate) fn has_restorable_workspace() -> bool {
     restorable_workspace().is_some()
 }
 
@@ -232,51 +234,11 @@ fn log_resource_layout(app: &AppHandle) {
     );
 }
 
-/// 处理命令行传入的文件 / 目录
-fn handle_startup_args(app: &AppHandle) {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let target = args.into_iter().find(|arg| {
-        let trimmed = arg.trim();
-        !trimmed.is_empty()
-            && !trimmed.starts_with('-')
-            && std::path::Path::new(trimmed).exists()
-    });
-    let Some(target) = target else {
-        return;
-    };
-    let is_file = std::fs::metadata(&target).map(|m| m.is_file()).unwrap_or(false);
-    let workspace = if is_file {
-        paths::dirname(&target)
-    } else {
-        target.clone()
-    };
-    // 与原实现一致：已有可恢复的工作区时（lastOpen / 最近文件）保留它，
-    // 只把文件开在当前工作区里，不因命令行参数抢占工作区。
-    if !has_restorable_workspace() {
-        settings::set_startup_workspace(workspace);
-    }
-
-    if is_file {
-        let content = fsops::read_text_file(&target).unwrap_or_default();
-        let file_name = paths::basename(&target);
-        let handle = app.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            events::broadcast_one(
-                &handle,
-                "file-opened-from-args",
-                serde_json::json!({
-                    "path": target,
-                    "fileName": file_name,
-                    "content": content
-                }),
-            );
-        });
-    }
-}
-
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            external_open::handle_second_instance(app, &argv, &cwd);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -294,17 +256,35 @@ pub fn run() {
             log_resource_layout(app.handle());
             setup_main_window(app)?;
             let handle = app.handle().clone();
+            #[cfg(target_os = "linux")]
+            misc::ensure_user_icon(&handle);
+            {
+                let settings_handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                    events::broadcast_one(&settings_handle, "settings-loaded", settings::all());
+                });
+            }
             // 窗口外观（透明度 / 玻璃效果）与启动自动检查更新
             misc::apply_window_visuals(&handle);
+            update::handle_startup(&handle);
             update::schedule_auto_check(&handle);
-            handle_startup_args(&handle);
+            sampletester::start(&handle);
+            cloud::start_heartbeat(&handle);
+            external_open::handle_startup_args(&handle);
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("启动 OICPP IDE 失败")
         .run(|_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                sampletester::shutdown();
+                cloud::stop_heartbeat();
                 debugger::shutdown();
+                terminal::shutdown_all();
+                lsp::shutdown();
+                fsread::shutdown_all_watchers();
+                let _ = std::fs::remove_dir_all(paths::oicpp_dir().join("codeTemp"));
                 let _ = settings::save();
                 // Windows 下静默拉起待安装的更新包
                 update::run_pending_installer_on_quit();

@@ -130,6 +130,15 @@ pub async fn dispatch(ipc: &Ipc<'_>) -> Option<Result<Value, String>> {
         "download-testlib" => Some(download(ipc, true).await),
         "select-compiler" => Some(select_compiler(ipc)),
         "select-testlib" => Some(select_testlib(ipc)),
+        "is-testlib-selected" => {
+            let version = ipc.string_arg(0);
+            let selected_path = crate::settings::testlib_path();
+            let version_dir = crate::paths::testlibs_dir().join(&version);
+            let selected = !version.trim().is_empty()
+                && !selected_path.is_empty()
+                && Path::new(&selected_path).starts_with(&version_dir);
+            Some(Ok(Value::Bool(selected)))
+        }
         // 渲染层不能直接请求外部接口：原版 Electron 设了 `webSecurity: false` 绕过同源校验，
         // 而 WebView2 强制 CORS，浏览器侧会直接报 `Failed to fetch`（连请求都发不出去）。
         // 这里由 Rust 侧代发请求，返回解析后的 JSON。
